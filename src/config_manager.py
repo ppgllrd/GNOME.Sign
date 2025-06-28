@@ -57,9 +57,9 @@ class ConfigManager:
             detailed_id = uuid.uuid4().hex
             detailed_template = {
                 "id": detailed_id,
-                "name": "Detailed",
-                "template_es": "Firmado por: <b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd/MM/yyyy HH:mm:ss$$\nEmisor: $$ISSUERCN$$\nSerie: $$CERTSERIAL$$",
-                "template_en": "Signed by: <b>$$SUBJECTCN$$</b>\nDate: $$SIGNDATE=dd/MM/yyyy HH:mm:ss$$\nIssuer: $$ISSUERCN$$\nSerial: $$CERTSERIAL$$"
+                "name": "Detallado/Detailed",
+                "template_es": "Firmado digitalmente por:\n<b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd-MM-yyyy$$\nCertificado emitido por:\n<b>$$ISSUERCN$$</b>\nNúmero de serie del certificado:\n<small><b>$$CERTSERIAL$$</b></small>",
+                "template_en": "Digitally signed by:\n<b>$$SUBJECTCN$$</b>\nDate: $$SIGNDATE=yyyy-MM-dd$$\nCertificate issued by:\n<b>$$ISSUERCN$$</b>\nCertificate serial number:\n<small><b>$$CERTSERIAL$$</b></small>"
             }
             
             self.config_data['signature_templates'].append(simple_template)
