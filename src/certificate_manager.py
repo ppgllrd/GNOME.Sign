@@ -34,6 +34,23 @@ class CertificateManager:
         """
         if path not in self.cert_paths:
             self.cert_paths.append(path)
+            
+    def remove_cert_path(self, path):
+        """Removes a certificate path from the manager's runtime list."""
+        if path in self.cert_paths:
+            self.cert_paths.remove(path)
+
+    def remove_credentials_from_keyring(self, path):
+        """
+        Removes the stored password for a given certificate path from the GNOME Keyring.
+
+        Args:
+            path (str): The file path of the certificate to remove.
+        
+        Returns:
+            bool: True on successful removal, False otherwise.
+        """
+        return Secret.password_clear_sync(KEYRING_SCHEMA, {"path": path}, None)
 
     def get_all_certificate_details(self):
         """

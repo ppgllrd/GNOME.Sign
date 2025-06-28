@@ -37,6 +37,10 @@ class ConfigManager:
             self.config_data['signature_templates'] = []
         if 'active_template_id' not in self.config_data:
             self.config_data['active_template_id'] = None
+        if 'last_folder' not in self.config_data:
+            self.config_data['last_folder'] = os.path.expanduser("~")
+        if 'language' not in self.config_data:
+            self.config_data['language'] = "es" # Default language
 
         self._create_default_templates_if_needed()
 
@@ -70,6 +74,13 @@ class ConfigManager:
         cert_paths = [c["path"] for c in self.config_data["certificates"]]
         if path not in cert_paths:
             self.config_data["certificates"].append({"path": path})
+
+    def remove_cert_path(self, path_to_remove):
+        """Removes a certificate path from the configuration."""
+        self.config_data["certificates"] = [
+            cert for cert in self.config_data["certificates"] if cert.get("path") != path_to_remove
+        ]
+        self.save()
 
     def get_recent_files(self):
         """Returns the list of recent file paths."""
@@ -131,3 +142,20 @@ class ConfigManager:
         if not active_id:
             return None
         return self.get_template_by_id(active_id)
+        
+    def get_last_folder(self):
+        """Returns the last used folder path."""
+        return self.config_data.get("last_folder", os.path.expanduser("~"))
+
+    def set_last_folder(self, path):
+        """Sets the last used folder path."""
+        self.config_data["last_folder"] = path
+        
+    def get_language(self):
+        """Returns the saved language code."""
+        return self.config_data.get("language", "es")
+
+    def set_language(self, lang_code):
+        """Sets and saves the language code."""
+        self.config_data["language"] = lang_code
+        self.save()

@@ -17,16 +17,18 @@ class AppWindow(Gtk.ApplicationWindow):
         app = self.get_application()
         self.set_default_size(800, 600)
         self.set_title(app._("window_title"))
+        self.set_icon_name("org.pepeg.GnomeSign")
         self._build_ui()
 
     def _build_ui(self):
         """Constructs the user interface."""
+        app = self.get_application()
         self.header_bar = Gtk.HeaderBar()
         self.set_titlebar(self.header_bar)
         
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.title_label = Gtk.Label()
-        self.title_label.set_markup(f"<span weight='bold'>{self.get_application()._('window_title')}</span>")
+        self.title_label.set_markup(f"<span weight='bold'>{app._('window_title')}</span>")
         self.subtitle_label = Gtk.Label()
         self.subtitle_label.get_style_context().add_class("caption")
         title_box.append(self.title_label)
@@ -57,11 +59,33 @@ class AppWindow(Gtk.ApplicationWindow):
         self.cert_button = Gtk.Button.new_from_icon_name("document-properties-symbolic")
         self.header_bar.pack_end(self.cert_button)
         
+        # --- Main Content Stack ---
+        self.stack = Gtk.Stack()
+        self.stack.set_transition_type(Gtk.StackTransitionType.SLIDE_UP_DOWN)
+        self.set_child(self.stack)
+
+        # PDF View
         self.drawing_area = Gtk.DrawingArea(hexpand=True, vexpand=True)
         self.scrolled_window = Gtk.ScrolledWindow()
         self.scrolled_window.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.scrolled_window.set_child(self.drawing_area)
-        self.set_child(self.scrolled_window)
+        self.stack.add_named(self.scrolled_window, "pdf_view")
+        
+        # Welcome View
+        welcome_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12,
+                              valign=Gtk.Align.CENTER, halign=Gtk.Align.CENTER)
+        welcome_icon = Gtk.Image.new_from_icon_name("org.pepeg.GnomeSign")
+        welcome_icon.set_pixel_size(128)
+        self.welcome_label = Gtk.Label()
+        self.welcome_label.set_markup(f"<span size='large'>{app._('welcome_prompt')}</span>")
+        self.welcome_button = Gtk.Button.new_with_label(app._("welcome_button"))
+        self.welcome_button.get_style_context().add_class("suggested-action")
+        welcome_box.append(welcome_icon)
+        welcome_box.append(self.welcome_label)
+        welcome_box.append(self.welcome_button)
+        self.stack.add_named(welcome_box, "welcome_view")
+        
+        self.welcome_button.connect("clicked", lambda w: self.get_application().activate_action("open"))
 
         self._connect_signals()
 
@@ -87,6 +111,10 @@ class AppWindow(Gtk.ApplicationWindow):
 
     def update_ui(self, app):
         """Updates all UI elements to reflect the application's state."""
+        self.title_label.set_markup(f"<span weight='bold'>{app._('window_title')}</span>")
+        self.welcome_label.set_markup(f"<span size='large'>{app._('welcome_prompt')}</span>")
+        self.welcome_button.set_label(app._("welcome_button"))
+        
         self.update_tooltips(app)
         self.update_cert_button_state(app)
         self.update_header_bar_state(app)
@@ -124,6 +152,9 @@ class AppWindow(Gtk.ApplicationWindow):
         """Updates the title, subtitle, and sensitivity of header bar controls."""
         is_doc_loaded = app.doc is not None
         
+        # Switch between Welcome and PDF view
+        self.stack.set_visible_child_name("pdf_view" if is_doc_loaded else "welcome_view")
+
         self.title_label.set_markup(f"<span weight='bold'>{app._('window_title')}</span>")
         if is_doc_loaded:
             self.subtitle_label.set_text(os.path.basename(app.current_file_path))

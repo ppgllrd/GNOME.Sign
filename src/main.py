@@ -38,7 +38,7 @@ class GnomeSign(Gtk.Application):
         self.signature_rect, self.is_dragging_rect = None, False
         self.drag_offset_x, self.drag_offset_y = 0, 0
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
-        self.language = "es"
+        self.language = "es" # Default, will be overwritten by config
         self.translations = {
             "es": {
                 "window_title": "GnomeSign", "open_pdf": "Abrir PDF...", "prev_page": "Página anterior", "next_page": "Página siguiente", 
@@ -57,7 +57,9 @@ class GnomeSign(Gtk.Application):
                 "template_en": "Plantilla en Inglés (Marcado Pango)", "preview": "Vista Previa", "new": "Nueva", "duplicate": "Duplicar", "save": "Guardar",
                 "delete": "Eliminar", "set_as_active": "Marcar como Activa", "unsaved_changes_title": "Cambios sin Guardar",
                 "unsaved_changes_message": "Tiene cambios sin guardar. ¿Desea continuar sin salvarlos?", "confirm_close_message": "Cerrar sin guardar los cambios?",
-                "issuer": "Emisor", "serial": "Nº Serie", "path": "Ruta"
+                "issuer": "Emisor", "serial": "Nº Serie", "path": "Ruta", "confirm_delete_cert_title": "Confirmar Eliminación",
+                "confirm_delete_cert_message": "¿Está seguro de que desea eliminar permanentemente este certificado y su contraseña guardada?",
+                "copy": "copia", "welcome_prompt": "Abre un documento PDF para empezar a firmar", "welcome_button": "Abrir PDF..."
             },
             "en": {
                 "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
@@ -76,7 +78,9 @@ class GnomeSign(Gtk.Application):
                 "template_en": "English Template (Pango Markup)", "preview": "Preview", "new": "New", "duplicate": "Duplicate", "save": "Save",
                 "delete": "Delete", "set_as_active": "Set as Active", "unsaved_changes_title": "Unsaved Changes",
                 "unsaved_changes_message": "You have unsaved changes. Do you want to proceed without saving?", "confirm_close_message": "Close without saving changes?",
-                "issuer": "Issuer", "serial": "Serial", "path": "Path"
+                "issuer": "Issuer", "serial": "Serial", "path": "Path", "confirm_delete_cert_title": "Confirm Deletion",
+                "confirm_delete_cert_message": "Are you sure you want to permanently delete this certificate and its saved password?",
+                "copy": "copy", "welcome_prompt": "Open a PDF document to start signing", "welcome_button": "Open PDF..."
             }
         }
 
@@ -86,6 +90,7 @@ class GnomeSign(Gtk.Application):
     def do_startup(self):
         Gtk.Application.do_startup(self)
         self.config.load()
+        self.language = self.config.get_language()
         self.cert_manager.set_cert_paths(self.config.get_cert_paths())
         self._build_actions()
 
@@ -117,6 +122,8 @@ class GnomeSign(Gtk.Application):
             self.doc = fitz.open(file_path)
             self.current_page = 0
             self.config.add_recent_file(file_path)
+            folder_path = os.path.dirname(file_path)
+            self.config.set_last_folder(folder_path)
             self.config.save()
             self.reset_signature_state()
             self.display_page(self.current_page)
@@ -128,10 +135,17 @@ class GnomeSign(Gtk.Application):
         def on_response(dialog, response):
             if response == Gtk.ResponseType.ACCEPT:
                 file = dialog.get_file()
-                if file: self.open_file_path(file.get_path())
+                if file:
+                    self.open_file_path(file.get_path())
+        
         file_chooser = Gtk.FileChooserNative.new(self._("open_pdf_dialog_title"), self.window, Gtk.FileChooserAction.OPEN, self._("open"), self._("cancel"))
         filter_pdf = Gtk.FileFilter(); filter_pdf.set_name(self._("pdf_files")); filter_pdf.add_mime_type("application/pdf")
         file_chooser.add_filter(filter_pdf)
+        
+        last_folder = self.config.get_last_folder()
+        if os.path.isdir(last_folder):
+            file_chooser.set_current_folder(Gio.File.new_for_path(last_folder))
+            
         file_chooser.connect("response", on_response)
         file_chooser.show()
 
@@ -147,15 +161,14 @@ class GnomeSign(Gtk.Application):
             
     def on_cert_button_clicked(self, action, param=None):
         cert_details = self.cert_manager.get_all_certificate_details()
-        if not cert_details: return
-        def on_cert_selected(selected_path):
-            if selected_path:
-                self.active_cert_path = selected_path
-                self.update_ui()
-        create_cert_selector_dialog(self.window, self, on_cert_selected)
+        if not cert_details:
+             show_message_dialog(self.window, self._("select_certificate"), self._("no_certificate_selected"), Gtk.MessageType.INFO)
+             return
+        create_cert_selector_dialog(self.window, self)
 
     def on_lang_button_clicked(self, action, param):
         self.language = "en" if self.language == "es" else "es"
+        self.config.set_language(self.language)
         self.update_ui()
         
     def on_edit_stamps_clicked(self, action, param):
@@ -196,10 +209,17 @@ class GnomeSign(Gtk.Application):
         def on_response(dialog, response):
             if response == Gtk.ResponseType.ACCEPT:
                 file = dialog.get_file()
-                if file: self._process_certificate_selection(file.get_path())
+                if file:
+                    self._process_certificate_selection(file.get_path())
+        
         file_chooser = Gtk.FileChooserNative.new(self._("open_cert_dialog_title"), self.window, Gtk.FileChooserAction.OPEN, self._("open"), self._("cancel"))
         filter_p12 = Gtk.FileFilter(); filter_p12.set_name(self._("p12_files")); filter_p12.add_pattern("*.p12"); filter_p12.add_pattern("*.pfx")
         file_chooser.add_filter(filter_p12)
+
+        last_folder = self.config.get_last_folder()
+        if os.path.isdir(last_folder):
+            file_chooser.set_current_folder(Gio.File.new_for_path(last_folder))
+            
         file_chooser.connect("response", on_response)
         file_chooser.show()
 
@@ -358,7 +378,10 @@ class GnomeSign(Gtk.Application):
                 common_name = self.cert_manager.test_certificate(pkcs12_path, password)
                 if common_name:
                     Secret.password_store_sync(KEYRING_SCHEMA, {"path": pkcs12_path}, Secret.COLLECTION_DEFAULT, f"Certificate password for {common_name}", password, None)
-                    self.config.add_cert_path(pkcs12_path); self.config.save(); self.cert_manager.add_cert_path(pkcs12_path)
+                    self.config.add_cert_path(pkcs12_path)
+                    self.config.set_last_folder(os.path.dirname(pkcs12_path))
+                    self.config.save()
+                    self.cert_manager.add_cert_path(pkcs12_path)
                     show_message_dialog(self.window, self._("success"), self._("cert_load_success").format(common_name), Gtk.MessageType.INFO)
                     self.update_ui()
                 else:

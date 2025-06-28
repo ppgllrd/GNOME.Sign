@@ -11,14 +11,14 @@ def create_about_dialog(parent, i18n_func):
     """Creates and shows the About dialog."""
     dialog = Gtk.AboutDialog(transient_for=parent, modal=True)
     dialog.set_program_name("GnomeSign")
-    dialog.set_version("1.5")
+    dialog.set_version("1.6")
     dialog.set_comments(i18n_func("sign_reason"))
     dialog.set_logo_icon_name("org.pepeg.GnomeSign") 
     dialog.set_website("https://github.com/your-repo-here")
     dialog.set_authors(["pepeg"])
     dialog.present()
 
-def create_cert_selector_dialog(parent, app, callback):
+def create_cert_selector_dialog(parent, app):
     """Creates a dialog to select a certificate from a list."""
     i18n_func = app._
     dialog = Gtk.Dialog(title=i18n_func("select_certificate"), transient_for=parent, modal=True)
@@ -28,12 +28,37 @@ def create_cert_selector_dialog(parent, app, callback):
     cert_details_list = app.cert_manager.get_all_certificate_details()
     active_row = None
 
+    def on_delete_cert_clicked(button, row_to_delete):
+        cert_path = row_to_delete.cert_path
+        response = show_message_dialog(dialog, i18n_func("confirm_delete_cert_title"), 
+                                       i18n_func("confirm_delete_cert_message"), 
+                                       Gtk.MessageType.QUESTION, Gtk.ButtonsType.YES_NO)
+        
+        if response == Gtk.ResponseType.YES:
+            # Delete from keyring, config, and runtime list
+            app.cert_manager.remove_credentials_from_keyring(cert_path)
+            app.config.remove_cert_path(cert_path)
+            app.cert_manager.remove_cert_path(cert_path)
+            
+            # Update UI
+            listbox.remove(row_to_delete)
+            if app.active_cert_path == cert_path:
+                app.active_cert_path = None
+            app.update_ui()
+
+
     for cert in cert_details_list:
         row = Gtk.ListBoxRow()
-        # Use a standard Python attribute instead of set_data for GTK4
         row.cert_path = cert['path']
 
-        item_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, margin_top=8, margin_bottom=8, margin_start=10, margin_end=10)
+        main_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6, margin_top=8, margin_bottom=8, margin_start=10, margin_end=10)
+        item_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, hexpand=True)
+        main_hbox.append(item_box)
+
+        delete_button = Gtk.Button.new_from_icon_name("edit-delete-symbolic")
+        delete_button.set_valign(Gtk.Align.CENTER)
+        delete_button.connect("clicked", on_delete_cert_clicked, row)
+        main_hbox.append(delete_button)
         
         subject_label = Gtk.Label(xalign=0)
         subject_label.set_markup(f"<b><big>{cert['subject_cn']}</big></b>")
@@ -50,7 +75,7 @@ def create_cert_selector_dialog(parent, app, callback):
         details_label.set_markup(details_text)
         item_box.append(details_label)
         
-        row.set_child(item_box)
+        row.set_child(main_hbox)
         listbox.append(row)
 
         if cert['path'] == app.active_cert_path:
@@ -60,10 +85,10 @@ def create_cert_selector_dialog(parent, app, callback):
         listbox.select_row(active_row)
 
     def on_row_activated(box, row):
-        # Retrieve the data from the custom attribute
-        selected_path = row.cert_path
-        callback(selected_path)
-        dialog.response(Gtk.ResponseType.OK)
+        if row:
+            app.active_cert_path = row.cert_path
+            app.update_ui()
+            dialog.response(Gtk.ResponseType.OK)
 
     listbox.connect("row-activated", on_row_activated)
     
@@ -105,7 +130,6 @@ def show_message_dialog(parent, title, message, message_type, buttons=Gtk.Button
     """
     dialog = Gtk.MessageDialog(transient_for=parent, modal=True, message_type=message_type, buttons=buttons, text=title, secondary_text=message)
     
-    # Use a MainLoop to wait for the response in a GTK4-compatible way
     response_id = Gtk.ResponseType.NONE
     loop = GLib.MainLoop()
 
@@ -346,7 +370,7 @@ def create_stamp_editor_dialog(parent, app, config):
         if not state["current_id"]: return
         form_data = get_current_form_state()
         state["current_id"] = uuid.uuid4().hex
-        name_entry.set_text(form_data["name"] + " (copy)")
+        name_entry.set_text(form_data["name"] + f" ({i18n_func('copy')})")
         state["dirty"] = True
 
     def on_save_clicked(btn):
