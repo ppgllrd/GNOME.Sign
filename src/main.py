@@ -40,8 +40,44 @@ class GnomeSign(Gtk.Application):
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
         self.language = "es"
         self.translations = {
-            "es": {"window_title": "GnomeSign", "open_pdf": "Abrir PDF...", "prev_page": "Página anterior", "next_page": "Página siguiente", "sign_document": "Firmar Documento", "load_certificate": "Cargar Certificado...", "select_certificate": "Seleccionar Certificado", "no_certificate_selected": "Sin certificado", "active_certificate": "Certificado activo: {}", "sign_reason": "Firmado con GNOMESign", "error": "Error", "success": "Éxito", "question": "Pregunta", "password": "Contraseña", "sig_error_title": "Error de Firma", "sig_error_message": "Error: {}", "need_pdf_and_area": "Necesitas abrir un PDF y seleccionar un área de firma.", "no_cert_selected_error": "No hay un certificado seleccionado.", "credential_load_error": "No se pudieron cargar las credenciales del certificado.", "sign_success_title": "Documento Firmado Correctamente", "sign_success_message": "Guardado en:\n{}\n\n¿Quieres abrir el documento firmado ahora?", "open_pdf_error": "No se pudo abrir el PDF: {}", "cert_load_success": "Certificado '{}' cargado.", "bad_password_or_file": "Contraseña incorrecta o archivo dañado.", "open_pdf_dialog_title": "Abrir Documento PDF", "open_cert_dialog_title": "Seleccionar Archivo de Certificado (.p12/.pfx)", "open": "_Abrir", "cancel": "_Cancelar", "accept": "_Aceptar", "pdf_files": "Archivos PDF", "p12_files": "Archivos PKCS#12 (.p12, .pfx)", "digitally_signed_by": "Firmado digitalmente por:", "date": "Fecha:", "change_language": "Cambiar Idioma", "about": "Acerca de", "open_recent": "Abrir Recientes", "jump_to_page_title": "Ir a la página", "jump_to_page_prompt": "Ir a la página (1 - {})", "edit_stamp_templates": "Gestionar Plantillas de Firma..."},
-            "en": {"window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", "sign_document": "Sign Document", "load_certificate": "Load Certificate...", "select_certificate": "Select certificate", "no_certificate_selected": "No certificate", "active_certificate": "Active certificate: {}", "sign_reason": "Signed with GNOMESign", "error": "Error", "success": "Success", "question": "Question", "password": "Password", "sig_error_title": "Signature Error", "sig_error_message": "Error: {}", "need_pdf_and_area": "You need to open a PDF and select a signature area.", "no_cert_selected_error": "No certificate selected.", "credential_load_error": "Could not load certificate credentials.", "sign_success_title": "Document Signed Successfully", "sign_success_message": "Saved at:\n{}\n\nDo you want to open the signed document now?", "open_pdf_error": "Could not open PDF: {}", "cert_load_success": "Certificate '{}' loaded successfully.", "bad_password_or_file": "Incorrect password or corrupted file.", "open_pdf_dialog_title": "Open PDF Document", "open_cert_dialog_title": "Select Certificate File (.p12/.pfx)", "open": "_Open", "cancel": "_Cancel", "accept": "_Accept", "pdf_files": "PDF Files", "p12_files": "PKCS#12 Files (.p12, .pfx)", "digitally_signed_by": "Digitally signed by:", "date": "Date:", "change_language": "Change Language", "about": "About", "open_recent": "Open Recent", "jump_to_page_title": "Go to page", "jump_to_page_prompt": "Go to page (1 - {})", "edit_stamp_templates": "Manage Signature Templates..."}
+            "es": {
+                "window_title": "GnomeSign", "open_pdf": "Abrir PDF...", "prev_page": "Página anterior", "next_page": "Página siguiente", 
+                "sign_document": "Firmar Documento", "load_certificate": "Cargar Certificado...", "select_certificate": "Seleccionar Certificado...", 
+                "no_certificate_selected": "Sin certificado", "active_certificate": "Certificado activo: {}", "sign_reason": "Firmado con GNOMESign", 
+                "error": "Error", "success": "Éxito", "question": "Pregunta", "password": "Contraseña", "sig_error_title": "Error de Firma", 
+                "sig_error_message": "Error: {}", "need_pdf_and_area": "Necesitas abrir un PDF y seleccionar un área de firma.", 
+                "no_cert_selected_error": "No hay un certificado seleccionado.", "credential_load_error": "No se pudieron cargar las credenciales del certificado.", 
+                "sign_success_title": "Documento Firmado Correctamente", "sign_success_message": "Guardado en:\n{}\n\n¿Quieres abrir el documento firmado ahora?", 
+                "open_pdf_error": "No se pudo abrir el PDF: {}", "cert_load_success": "Certificado '{}' cargado.", "bad_password_or_file": "Contraseña incorrecta o archivo dañado.", 
+                "open_pdf_dialog_title": "Abrir Documento PDF", "open_cert_dialog_title": "Seleccionar Archivo de Certificado (.p12/.pfx)", 
+                "open": "_Abrir", "cancel": "_Cancelar", "accept": "_Aceptar", "pdf_files": "Archivos PDF", "p12_files": "Archivos PKCS#12 (.p12, .pfx)", 
+                "date": "Fecha:", "change_language": "Cambiar Idioma", "about": "Acerca de", "open_recent": "Abrir Recientes", 
+                "jump_to_page_title": "Ir a la página", "jump_to_page_prompt": "Ir a la página (1 - {})", "edit_stamp_templates": "Gestionar Plantillas de Firma...",
+                "templates": "Plantillas", "template_name": "Nombre de la Plantilla", "template_es": "Plantilla en Español (Marcado Pango)",
+                "template_en": "Plantilla en Inglés (Marcado Pango)", "preview": "Vista Previa", "new": "Nueva", "duplicate": "Duplicar", "save": "Guardar",
+                "delete": "Eliminar", "set_as_active": "Marcar como Activa", "unsaved_changes_title": "Cambios sin Guardar",
+                "unsaved_changes_message": "Tiene cambios sin guardar. ¿Desea continuar sin salvarlos?", "confirm_close_message": "Cerrar sin guardar los cambios?",
+                "issuer": "Emisor", "serial": "Nº Serie", "path": "Ruta"
+            },
+            "en": {
+                "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
+                "sign_document": "Sign Document", "load_certificate": "Load Certificate...", "select_certificate": "Select Certificate...", 
+                "no_certificate_selected": "No certificate", "active_certificate": "Active certificate: {}", "sign_reason": "Signed with GNOMESign", 
+                "error": "Error", "success": "Success", "question": "Question", "password": "Password", "sig_error_title": "Signature Error", 
+                "sig_error_message": "Error: {}", "need_pdf_and_area": "You need to open a PDF and select a signature area.", 
+                "no_cert_selected_error": "No certificate selected.", "credential_load_error": "Could not load certificate credentials.", 
+                "sign_success_title": "Document Signed Successfully", "sign_success_message": "Saved at:\n{}\n\nDo you want to open the signed document now?", 
+                "open_pdf_error": "Could not open PDF: {}", "cert_load_success": "Certificate '{}' loaded successfully.", "bad_password_or_file": "Incorrect password or corrupted file.", 
+                "open_pdf_dialog_title": "Open PDF Document", "open_cert_dialog_title": "Select Certificate File (.p12/.pfx)", 
+                "open": "_Open", "cancel": "_Cancel", "accept": "_Accept", "pdf_files": "PDF Files", "p12_files": "PKCS#12 Files (.p12, .pfx)", 
+                "date": "Date:", "change_language": "Change Language", "about": "About", "open_recent": "Open Recent", 
+                "jump_to_page_title": "Go to page", "jump_to_page_prompt": "Go to page (1 - {})", "edit_stamp_templates": "Manage Signature Templates...",
+                "templates": "Templates", "template_name": "Template Name", "template_es": "Spanish Template (Pango Markup)",
+                "template_en": "English Template (Pango Markup)", "preview": "Preview", "new": "New", "duplicate": "Duplicate", "save": "Save",
+                "delete": "Delete", "set_as_active": "Set as Active", "unsaved_changes_title": "Unsaved Changes",
+                "unsaved_changes_message": "You have unsaved changes. Do you want to proceed without saving?", "confirm_close_message": "Close without saving changes?",
+                "issuer": "Issuer", "serial": "Serial", "path": "Path"
+            }
         }
 
     def _(self, key):
@@ -63,6 +99,7 @@ class GnomeSign(Gtk.Application):
             ("open", self.on_open_pdf_clicked),
             ("sign", self.on_sign_document_clicked),
             ("load_cert", self.on_load_certificate_clicked),
+            ("select_cert", self.on_cert_button_clicked),
             ("change_lang", self.on_lang_button_clicked),
             ("about", lambda a, p: create_about_dialog(self.window, self._)),
             ("open_recent", self.on_open_recent_clicked, "s"),
@@ -108,21 +145,21 @@ class GnomeSign(Gtk.Application):
             self.config.save()
             self.update_ui()
             
-    def on_cert_button_clicked(self, button):
-        cert_map = self.cert_manager.get_all_display_names(KEYRING_SCHEMA)
-        if not cert_map: return
+    def on_cert_button_clicked(self, action, param=None):
+        cert_details = self.cert_manager.get_all_certificate_details()
+        if not cert_details: return
         def on_cert_selected(selected_path):
             if selected_path:
                 self.active_cert_path = selected_path
                 self.update_ui()
-        create_cert_selector_dialog(self.window, self._, cert_map, on_cert_selected)
+        create_cert_selector_dialog(self.window, self, on_cert_selected)
 
     def on_lang_button_clicked(self, action, param):
         self.language = "en" if self.language == "es" else "es"
         self.update_ui()
         
     def on_edit_stamps_clicked(self, action, param):
-        create_stamp_editor_dialog(self.window, self, self._, self.config)
+        create_stamp_editor_dialog(self.window, self, self.config)
 
     def on_sign_document_clicked(self, action=None, param=None):
         if not all([self.doc, self.signature_rect, self.current_file_path, self.active_cert_path]):
@@ -184,10 +221,9 @@ class GnomeSign(Gtk.Application):
             self.page, self.doc, self.current_file_path, self.display_pixbuf = None, None, None, None
         
         if hasattr(self, 'window'):
-            self.window.reset_scroll()
             self.window.update_header_bar_state(self)
             self.window.drawing_area.queue_draw()
-            self.window.update_drawing_area_size_request()
+            GLib.idle_add(self.window.adjust_scroll_and_viewport)
 
     def on_prev_page_clicked(self, button):
         if self.doc and self.current_page > 0:
@@ -204,21 +240,14 @@ class GnomeSign(Gtk.Application):
             self.update_ui()
             
     def on_jump_to_page_clicked(self, button):
-        if not self.doc:
-            return
-            
+        if not self.doc: return
         def on_page_selected(page_num):
             if page_num is not None:
                 self.current_page = page_num
                 self.reset_signature_state()
                 self.display_page(self.current_page)
                 self.update_ui()
-        
-        create_jump_to_page_dialog(
-            self.window, self._, 
-            self.current_page + 1, len(self.doc),
-            on_page_selected
-        )
+        create_jump_to_page_dialog(self.window, self._, self.current_page + 1, len(self.doc), on_page_selected)
 
     def on_drag_begin(self, gesture, start_x, start_y):
         if self.signature_rect:
@@ -227,7 +256,6 @@ class GnomeSign(Gtk.Application):
                 self.is_dragging_rect = True
                 self.drag_offset_x, self.drag_offset_y = start_x - x, start_y - y
                 return
-
         self.is_dragging_rect = False
         self.start_x, self.start_y = start_x, start_y
         self.end_x, self.end_y = start_x, start_y
@@ -256,12 +284,14 @@ class GnomeSign(Gtk.Application):
             self.window.update_header_bar_state(self)
             self.window.drawing_area.queue_draw()
 
-    def get_parsed_stamp_text(self, certificate, for_html=False):
-        template_obj = self.config.get_active_template()
-        if not template_obj:
-            return "Error: No active signature template found."
-
-        template = template_obj.get(f"template_{self.language}", template_obj.get("template_en", ""))
+    def get_parsed_stamp_text(self, certificate, for_html=False, override_template=None):
+        if override_template is not None:
+            template = override_template
+        else:
+            template_obj = self.config.get_active_template()
+            if not template_obj:
+                return "Error: No active signature template found."
+            template = template_obj.get(f"template_{self.language}", template_obj.get("template_en", ""))
         
         def get_cn(name):
             try:
@@ -273,22 +303,18 @@ class GnomeSign(Gtk.Application):
         issuer_cn = get_cn(certificate.issuer)
         cert_serial = str(certificate.serial_number)
         
-        # Replace simple placeholders
         text = template.replace("$$SUBJECTCN$$", subject_cn)
         text = text.replace("$$ISSUERCN$$", issuer_cn)
         text = text.replace("$$CERTSERIAL$$", cert_serial)
 
-        # Replace date placeholder
         date_match = re.search(r'\$\$SIGNDATE=(.*?)\$\$', text)
         if date_match:
             format_pattern = date_match.group(1)
-            # Basic translation from SimpleDateFormat to strftime
             py_format = format_pattern.replace("dd", "%d").replace("MM", "%m").replace("yyyy", "%Y").replace("yy", "%y")
             py_format = py_format.replace("HH", "%H").replace("mm", "%M").replace("ss", "%S")
             formatted_date = datetime.now().strftime(py_format)
             text = text.replace(date_match.group(0), formatted_date)
         
-        # For PyMuPDF HTML, convert newlines to <br>
         if for_html:
             text = text.replace("\n", "<br>")
             
@@ -303,13 +329,14 @@ class GnomeSign(Gtk.Application):
         fitz_rect = fitz.Rect(x * scale, y * scale, (x + w) * scale, (y + h) * scale)
 
         page.draw_rect(fitz_rect, color=None, fill=(1.0, 1.0, 1.0), fill_opacity=1.0, overlay=False)
-        page.draw_rect(fitz_rect, color=(0.0, 0.5, 0.0), width=1.5, overlay=True)
-
+        
         parsed_text_for_html = self.get_parsed_stamp_text(certificate, for_html=True)
 
         html_content = f"""
-        <div style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-family: sans-serif; font-size: 8pt; line-height: 1.2;">
-            {parsed_text_for_html}
+        <div style="width: 100%; height: 100%; display: table; text-align: center;">
+            <div style="display: table-cell; vertical-align: middle; font-family: sans-serif; font-size: 8pt; line-height: 1.2;">
+                {parsed_text_for_html}
+            </div>
         </div>
         """
         html_rect = fitz_rect + (5, 5, -5, -5)

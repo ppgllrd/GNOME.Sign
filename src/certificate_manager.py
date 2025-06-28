@@ -1,4 +1,3 @@
-# certificate_manager.py
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography import x509
 from gi.repository import Secret
@@ -36,30 +35,35 @@ class CertificateManager:
         if path not in self.cert_paths:
             self.cert_paths.append(path)
 
-    def get_all_display_names(self, keyring_schema):
+    def get_all_certificate_details(self):
         """
-        Retrieves a map of {common_name: path} for all managed certificates.
-        It fetches the password for each certificate from the GNOME Keyring.
+        Retrieves a list of dictionaries with details for all managed certificates.
         
-        Args:
-            keyring_schema (Secret.Schema): The schema used for keyring lookups.
-            
         Returns:
-            dict: A dictionary mapping certificate common names to their file paths.
+            list: A list of dicts, where each dict contains details of a certificate.
+                  e.g., [{'path': '/path/to/cert.p12', 'subject_cn': '...', ...}, ...]
         """
-        names = {}
+        details_list = []
         for path in self.cert_paths:
-            password = Secret.password_lookup_sync(keyring_schema, {"path": path}, None)
+            password = Secret.password_lookup_sync(KEYRING_SCHEMA, {"path": path}, None)
             if password:
                 _, cert = self.get_credentials(path, password)
                 if cert:
                     try:
-                        cn_attrs = cert.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)
-                        common_name = cn_attrs[0].value if cn_attrs else cert.subject.rfc4514_string()
-                        names[common_name] = path
+                        def get_cn(name_obj):
+                            attrs = name_obj.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)
+                            return attrs[0].value if attrs else name_obj.rfc4514_string()
+
+                        details = {
+                            "path": path,
+                            "subject_cn": get_cn(cert.subject),
+                            "issuer_cn": get_cn(cert.issuer),
+                            "serial": str(cert.serial_number)
+                        }
+                        details_list.append(details)
                     except Exception:
-                        continue  # Ignore cert if its name can't be read
-        return names
+                        continue  # Ignore cert if its details can't be read
+        return details_list
 
     def get_credentials(self, pkcs12_path, password):
         """
@@ -80,7 +84,8 @@ class CertificateManager:
             )
             return private_key, certificate
         except Exception as e:
-            print(f"Error loading credentials from '{pkcs12_path}': {e}")
+            # This can happen with bad passwords or corrupted files.
+            # print(f"Error loading credentials from '{pkcs12_path}': {e}")
             return None, None
 
     def test_certificate(self, pkcs12_path, password):

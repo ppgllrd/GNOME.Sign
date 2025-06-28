@@ -71,7 +71,7 @@ class AppWindow(Gtk.ApplicationWindow):
         
         self.open_button.connect("clicked", lambda w: app.activate_action("open"))
         self.sign_button.connect("clicked", lambda w: app.activate_action("sign"))
-        self.cert_button.connect("clicked", app.on_cert_button_clicked)
+        self.cert_button.connect("clicked", lambda w: app.activate_action("select_cert"))
         self.prev_page_button.connect("clicked", app.on_prev_page_clicked)
         self.next_page_button.connect("clicked", app.on_next_page_clicked)
         self.page_entry_button.connect("clicked", app.on_jump_to_page_clicked)
@@ -103,24 +103,22 @@ class AppWindow(Gtk.ApplicationWindow):
 
     def update_cert_button_state(self, app):
         """Updates the state and tooltip of the certificate button."""
-        cert_map = app.cert_manager.get_all_display_names(KEYRING_SCHEMA)
-        self.cert_button.set_sensitive(bool(cert_map))
-        if not cert_map:
+        cert_details = app.cert_manager.get_all_certificate_details()
+        self.cert_button.set_sensitive(bool(cert_details))
+        if not cert_details:
             app.active_cert_path = None
             self.cert_button.set_tooltip_text(app._("no_certificate_selected"))
             return
 
-        if app.active_cert_path and app.active_cert_path in cert_map.values():
-            active_name = next((name for name, path in cert_map.items() if path == app.active_cert_path), "Unknown")
-            self.cert_button.set_tooltip_text(app._("active_certificate").format(active_name))
+        active_cert_details = next((c for c in cert_details if c['path'] == app.active_cert_path), None)
+
+        if active_cert_details:
+            self.cert_button.set_tooltip_text(app._("active_certificate").format(active_cert_details['subject_cn']))
         else:
-            if cert_map:
-                first_name, first_path = list(cert_map.items())[0]
-                app.active_cert_path = first_path
-                self.cert_button.set_tooltip_text(app._("active_certificate").format(first_name))
-            else:
-                 app.active_cert_path = None
-                 self.cert_button.set_tooltip_text(app._("no_certificate_selected"))
+            # If no active cert or active cert not found, default to first one
+            app.active_cert_path = cert_details[0]['path']
+            self.cert_button.set_tooltip_text(app._("active_certificate").format(cert_details[0]['subject_cn']))
+
 
     def update_header_bar_state(self, app):
         """Updates the title, subtitle, and sensitivity of header bar controls."""
@@ -165,6 +163,7 @@ class AppWindow(Gtk.ApplicationWindow):
 
         settings_section = Gio.Menu()
         settings_section.append(app._("load_certificate"), "app.load_cert")
+        settings_section.append(app._("select_certificate"), "app.select_cert")
         settings_section.append(app._("edit_stamp_templates"), "app.edit_stamps")
         settings_section.append(app._("change_language"), "app.change_lang")
         menu.append_section(None, settings_section)
@@ -180,10 +179,15 @@ class AppWindow(Gtk.ApplicationWindow):
         app = self.get_application()
         if app.page:
             app.display_pixbuf = None
-        self.update_drawing_area_size_request()
+        GLib.idle_add(self.adjust_scroll_and_viewport)
 
-    def reset_scroll(self):
-        self.scrolled_window.get_vadjustment().set_value(0)
+    def adjust_scroll_and_viewport(self):
+        self.update_drawing_area_size_request()
+        adj = self.scrolled_window.get_vadjustment()
+        upper = adj.get_upper()
+        page_size = adj.get_page_size()
+        if adj.get_value() > upper - page_size:
+            adj.set_value(upper - page_size)
 
     def update_drawing_area_size_request(self):
         app = self.get_application()
