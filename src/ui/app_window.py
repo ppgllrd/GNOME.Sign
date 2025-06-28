@@ -2,14 +2,15 @@ import gi
 import os
 import re
 gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
 gi.require_version("Secret", "1")
 gi.require_version("PangoCairo", "1.0")
-from gi.repository import Gtk, Gdk, Gio, Secret, GLib, Pango, PangoCairo
+from gi.repository import Gtk, Adw, Gdk, Gio, Secret, GLib, Pango, PangoCairo
 from certificate_manager import KEYRING_SCHEMA
 import fitz 
 from gi.repository import GdkPixbuf
 
-class AppWindow(Gtk.ApplicationWindow):
+class AppWindow(Adw.ApplicationWindow):
     """The main window of the application, responsible for building the UI."""
 
     def __init__(self, **kwargs):
@@ -17,24 +18,16 @@ class AppWindow(Gtk.ApplicationWindow):
         
         app = self.get_application()
         self.set_default_size(800, 600)
-        self.set_title(app._("window_title"))
         self.set_icon_name("org.pepeg.GnomeSign")
         self._build_ui()
 
     def _build_ui(self):
         """Constructs the user interface."""
         app = self.get_application()
-        self.header_bar = Gtk.HeaderBar()
-        self.set_titlebar(self.header_bar)
         
-        title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.title_label = Gtk.Label()
-        self.title_label.set_markup(f"<span weight='bold'>{app._('window_title')}</span>")
-        self.subtitle_label = Gtk.Label()
-        self.subtitle_label.get_style_context().add_class("caption")
-        title_box.append(self.title_label)
-        title_box.append(self.subtitle_label)
-        self.header_bar.set_title_widget(title_box)
+        self.header_bar = Adw.HeaderBar()
+        self.title_widget = Adw.WindowTitle(title=app._("window_title"))
+        self.header_bar.set_title_widget(self.title_widget)
         
         self.open_button = Gtk.Button.new_from_icon_name("document-open-symbolic")
         self.header_bar.pack_start(self.open_button)
@@ -60,10 +53,16 @@ class AppWindow(Gtk.ApplicationWindow):
         self.cert_button = Gtk.Button.new_from_icon_name("dialog-password-symbolic")
         self.header_bar.pack_end(self.cert_button)
         
+        # Main Content Box
+        main_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        main_content.append(self.header_bar)
+
         # --- Main Content Stack ---
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.SLIDE_UP_DOWN)
-        self.set_child(self.stack)
+        main_content.append(self.stack)
+        
+        self.set_content(main_content)
 
         # PDF View
         self.drawing_area = Gtk.DrawingArea(hexpand=True, vexpand=True)
@@ -74,7 +73,8 @@ class AppWindow(Gtk.ApplicationWindow):
         
         # Welcome View
         welcome_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12,
-                              valign=Gtk.Align.CENTER, halign=Gtk.Align.CENTER)
+                              valign=Gtk.Align.CENTER, halign=Gtk.Align.CENTER,
+                              hexpand=True, vexpand=True)
         welcome_icon = Gtk.Image.new_from_icon_name("org.pepeg.GnomeSign")
         welcome_icon.set_pixel_size(128)
         self.welcome_label = Gtk.Label()
@@ -112,7 +112,7 @@ class AppWindow(Gtk.ApplicationWindow):
 
     def update_ui(self, app):
         """Updates all UI elements to reflect the application's state."""
-        self.title_label.set_markup(f"<span weight='bold'>{app._('window_title')}</span>")
+        self.title_widget.set_title(app._('window_title'))
         self.welcome_label.set_markup(f"<span size='large'>{app._('welcome_prompt')}</span>")
         self.welcome_button.set_label(app._("welcome_button"))
         
@@ -146,25 +146,24 @@ class AppWindow(Gtk.ApplicationWindow):
         if active_cert_details:
             self.cert_button.set_tooltip_text(app._("active_certificate").format(active_cert_details['subject_cn']))
         else:
-            # If no active cert or active cert not found, default to first one
-            app.active_cert_path = cert_details[0]['path']
-            self.cert_button.set_tooltip_text(app._("active_certificate").format(cert_details[0]['subject_cn']))
+            if cert_details:
+                app.active_cert_path = cert_details[0]['path']
+                self.cert_button.set_tooltip_text(app._("active_certificate").format(cert_details[0]['subject_cn']))
+            else:
+                app.active_cert_path = None
+                self.cert_button.set_tooltip_text(app._("no_certificate_selected"))
 
 
     def update_header_bar_state(self, app):
         """Updates the title, subtitle, and sensitivity of header bar controls."""
         is_doc_loaded = app.doc is not None
         
-        # Switch between Welcome and PDF view
         self.stack.set_visible_child_name("pdf_view" if is_doc_loaded else "welcome_view")
 
-        self.title_label.set_markup(f"<span weight='bold'>{app._('window_title')}</span>")
         if is_doc_loaded:
-            self.subtitle_label.set_text(os.path.basename(app.current_file_path))
-            self.subtitle_label.set_visible(True)
+            self.title_widget.set_subtitle(os.path.basename(app.current_file_path))
         else:
-            self.subtitle_label.set_text("")
-            self.subtitle_label.set_visible(False)
+            self.title_widget.set_subtitle("")
             
         self.prev_page_button.set_sensitive(is_doc_loaded and app.current_page > 0)
         self.next_page_button.set_sensitive(is_doc_loaded and app.current_page < len(app.doc) - 1)
@@ -195,12 +194,10 @@ class AppWindow(Gtk.ApplicationWindow):
         sign_section.append(app._("sign_document"), "app.sign")
         menu.append_section(None, sign_section)
 
-        # Settings section
         settings_section = Gio.Menu()
         settings_section.append(app._("select_certificate"), "app.select_cert")
         settings_section.append(app._("edit_stamp_templates"), "app.edit_stamps")
         
-        # Language submenu
         lang_submenu = Gio.Menu()
         lang_submenu.append("Idioma Español", "app.change_lang('es')")
         lang_submenu.append("English Language", "app.change_lang('en')")
@@ -208,7 +205,6 @@ class AppWindow(Gtk.ApplicationWindow):
         
         menu.append_section(None, settings_section)
 
-        # About section
         about_section = Gio.Menu()
         about_section.append(app._("about"), "app.about")
         menu.append_section(None, about_section)
@@ -282,7 +278,6 @@ class AppWindow(Gtk.ApplicationWindow):
             markup_text = app.get_parsed_stamp_text(certificate, for_html=False)
             layout.set_markup(markup_text, -1)
 
-            # --- DYNAMIC SCALING LOGIC ---
             ink_rect, logical_rect = layout.get_pixel_extents()
             
             available_width = w - 10

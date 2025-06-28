@@ -22,7 +22,7 @@ class I18NManager:
                 "issuer": "Emisor", "serial": "Nº Serie", "path": "Ruta", "confirm_delete_cert_title": "Confirmar Eliminación",
                 "confirm_delete_cert_message": "¿Está seguro de que desea eliminar permanentemente este certificado y su contraseña guardada?",
                 "copy": "copia", "welcome_prompt": "Abre un documento PDF para empezar a firmar", "welcome_button": "Abrir PDF...",
-                "add_certificate": "Añadir Certificado..."
+                "add_certificate": "Añadir Certificado...", "expires": "Caduca"
             },
             "en": {
                 "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
@@ -44,7 +44,7 @@ class I18NManager:
                 "issuer": "Issuer", "serial": "Serial", "path": "Path", "confirm_delete_cert_title": "Confirm Deletion",
                 "confirm_delete_cert_message": "Are you sure you want to permanently delete this certificate and its saved password?",
                 "copy": "copy", "welcome_prompt": "Open a PDF document to start signing", "welcome_button": "Open PDF...",
-                "add_certificate": "Add Certificate..."
+                "add_certificate": "Add Certificate...", "expires": "Expires"
             }
         }
 

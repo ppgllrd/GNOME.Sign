@@ -70,11 +70,11 @@ def create_cert_selector_dialog(parent, app):
         expires = cert['expires']
         
         if expires < now:
-            expiry_markup = f"<span color='red'><b>Expires:</b> {expires.strftime('%Y-%m-%d')} (Expired)</span>"
+            expiry_markup = f"<span color='red'><b>{i18n_func('expires')}:</b> {expires.strftime('%Y-%m-%d')} (Expired)</span>"
         elif expires < (now + timedelta(days=30)):
-            expiry_markup = f"<span color='orange'><b>Expires:</b> {expires.strftime('%Y-%m-%d')}</span>"
+            expiry_markup = f"<span color='orange'><b>{i18n_func('expires')}:</b> {expires.strftime('%Y-%m-%d')}</span>"
         else:
-            expiry_markup = f"<b>Expires:</b> {expires.strftime('%Y-%m-%d')}"
+            expiry_markup = f"<b>{i18n_func('expires')}:</b> {expires.strftime('%Y-%m-%d')}"
 
         details_label = Gtk.Label(xalign=0)
         details_label.set_wrap(True)

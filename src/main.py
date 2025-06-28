@@ -1,8 +1,9 @@
 import gi
 gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1") 
 gi.require_version("Secret", "1")
-from gi.repository import Gtk, Gio, Secret, GLib
-import fitz  # PyMuPDF
+from gi.repository import Gtk, Adw, Gio, Secret, GLib 
+import fitz
 import os
 import sys
 import shutil
@@ -24,7 +25,7 @@ from pyhanko.keys.internal import translate_pyca_cryptography_key_to_asn1, trans
 from pyhanko_certvalidator.registry import SimpleCertificateStore
 from cryptography import x509
 
-class GnomeSign(Gtk.Application):
+class GnomeSign(Adw.Application):
     """
     The main application class. It manages the application lifecycle,
     state, and actions. It doesn't build the UI itself but delegates
@@ -45,7 +46,7 @@ class GnomeSign(Gtk.Application):
         return self.i18n._(key)
 
     def do_startup(self):
-        Gtk.Application.do_startup(self)
+        Adw.Application.do_startup(self)
         self.config.load()
         self.i18n.set_language(self.config.get_language())
         self.cert_manager.set_cert_paths(self.config.get_cert_paths())
@@ -71,7 +72,6 @@ class GnomeSign(Gtk.Application):
             action.connect("activate", callback)
             self.add_action(action)
             
-        # Stateful action for language change (radio buttons)
         lang_action = Gio.SimpleAction.new_stateful("change_lang", GLib.VariantType('s'), GLib.Variant('s', self.i18n.get_language()))
         lang_action.connect("change-state", self.on_lang_change_state)
         self.add_action(lang_action)
