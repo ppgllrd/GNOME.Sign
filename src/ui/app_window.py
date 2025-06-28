@@ -54,10 +54,10 @@ class AppWindow(Gtk.ApplicationWindow):
         self.menu_button.set_icon_name("open-menu-symbolic")
         self.header_bar.pack_end(self.menu_button)
         
-        self.sign_button = Gtk.Button.new_from_icon_name("mail-signed-symbolic")
+        self.sign_button = Gtk.Button.new_from_icon_name("document-edit-symbolic")
         self.header_bar.pack_end(self.sign_button)
 
-        self.cert_button = Gtk.Button.new_from_icon_name("document-properties-symbolic")
+        self.cert_button = Gtk.Button.new_from_icon_name("dialog-password-symbolic")
         self.header_bar.pack_end(self.cert_button)
         
         # --- Main Content Stack ---
@@ -194,7 +194,6 @@ class AppWindow(Gtk.ApplicationWindow):
         menu.append_section(None, sign_section)
 
         settings_section = Gio.Menu()
-        settings_section.append(app._("load_certificate"), "app.load_cert")
         settings_section.append(app._("select_certificate"), "app.select_cert")
         settings_section.append(app._("edit_stamp_templates"), "app.edit_stamps")
         settings_section.append(app._("change_language"), "app.change_lang")

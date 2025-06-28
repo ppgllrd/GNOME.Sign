@@ -9,6 +9,7 @@ import shutil
 import re
 from datetime import datetime
 
+from i18n import I18NManager
 from certificate_manager import CertificateManager, KEYRING_SCHEMA
 from config_manager import ConfigManager
 from ui.app_window import AppWindow
@@ -32,65 +33,21 @@ class GnomeSign(Gtk.Application):
     def __init__(self):
         super().__init__(application_id="org.pepeg.GnomeSign", flags=Gio.ApplicationFlags.FLAGS_NONE)
         self.config = ConfigManager()
+        self.i18n = I18NManager()
         self.cert_manager = CertificateManager()
         self.doc, self.current_page, self.active_cert_path = None, 0, None
         self.page, self.display_pixbuf, self.current_file_path = None, None, None
         self.signature_rect, self.is_dragging_rect = None, False
         self.drag_offset_x, self.drag_offset_y = 0, 0
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
-        self.language = "es" # Default, will be overwritten by config
-        self.translations = {
-            "es": {
-                "window_title": "GnomeSign", "open_pdf": "Abrir PDF...", "prev_page": "Página anterior", "next_page": "Página siguiente", 
-                "sign_document": "Firmar Documento", "load_certificate": "Cargar Certificado...", "select_certificate": "Seleccionar Certificado...", 
-                "no_certificate_selected": "Sin certificado", "active_certificate": "Certificado activo: {}", "sign_reason": "Firmado con GNOMESign", 
-                "error": "Error", "success": "Éxito", "question": "Pregunta", "password": "Contraseña", "sig_error_title": "Error de Firma", 
-                "sig_error_message": "Error: {}", "need_pdf_and_area": "Necesitas abrir un PDF y seleccionar un área de firma.", 
-                "no_cert_selected_error": "No hay un certificado seleccionado.", "credential_load_error": "No se pudieron cargar las credenciales del certificado.", 
-                "sign_success_title": "Documento Firmado Correctamente", "sign_success_message": "Guardado en:\n{}\n\n¿Quieres abrir el documento firmado ahora?", 
-                "open_pdf_error": "No se pudo abrir el PDF: {}", "cert_load_success": "Certificado '{}' cargado.", "bad_password_or_file": "Contraseña incorrecta o archivo dañado.", 
-                "open_pdf_dialog_title": "Abrir Documento PDF", "open_cert_dialog_title": "Seleccionar Archivo de Certificado (.p12/.pfx)", 
-                "open": "_Abrir", "cancel": "_Cancelar", "accept": "_Aceptar", "pdf_files": "Archivos PDF", "p12_files": "Archivos PKCS#12 (.p12, .pfx)", 
-                "date": "Fecha:", "change_language": "Cambiar Idioma", "about": "Acerca de", "open_recent": "Abrir Recientes", 
-                "jump_to_page_title": "Ir a la página", "jump_to_page_prompt": "Ir a la página (1 - {})", "edit_stamp_templates": "Gestionar Plantillas de Firma...",
-                "templates": "Plantillas", "template_name": "Nombre de la Plantilla", "template_es": "Plantilla en Español (Marcado Pango)",
-                "template_en": "Plantilla en Inglés (Marcado Pango)", "preview": "Vista Previa", "new": "Nueva", "duplicate": "Duplicar", "save": "Guardar",
-                "delete": "Eliminar", "set_as_active": "Marcar como Activa", "unsaved_changes_title": "Cambios sin Guardar",
-                "unsaved_changes_message": "Tiene cambios sin guardar. ¿Desea continuar sin salvarlos?", "confirm_close_message": "Cerrar sin guardar los cambios?",
-                "issuer": "Emisor", "serial": "Nº Serie", "path": "Ruta", "confirm_delete_cert_title": "Confirmar Eliminación",
-                "confirm_delete_cert_message": "¿Está seguro de que desea eliminar permanentemente este certificado y su contraseña guardada?",
-                "copy": "copia", "welcome_prompt": "Abre un documento PDF para empezar a firmar", "welcome_button": "Abrir PDF..."
-            },
-            "en": {
-                "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
-                "sign_document": "Sign Document", "load_certificate": "Load Certificate...", "select_certificate": "Select Certificate...", 
-                "no_certificate_selected": "No certificate", "active_certificate": "Active certificate: {}", "sign_reason": "Signed with GNOMESign", 
-                "error": "Error", "success": "Success", "question": "Question", "password": "Password", "sig_error_title": "Signature Error", 
-                "sig_error_message": "Error: {}", "need_pdf_and_area": "You need to open a PDF and select a signature area.", 
-                "no_cert_selected_error": "No certificate selected.", "credential_load_error": "Could not load certificate credentials.", 
-                "sign_success_title": "Document Signed Successfully", "sign_success_message": "Saved at:\n{}\n\nDo you want to open the signed document now?", 
-                "open_pdf_error": "Could not open PDF: {}", "cert_load_success": "Certificate '{}' loaded successfully.", "bad_password_or_file": "Incorrect password or corrupted file.", 
-                "open_pdf_dialog_title": "Open PDF Document", "open_cert_dialog_title": "Select Certificate File (.p12/.pfx)", 
-                "open": "_Open", "cancel": "_Cancel", "accept": "_Accept", "pdf_files": "PDF Files", "p12_files": "PKCS#12 Files (.p12, .pfx)", 
-                "date": "Date:", "change_language": "Change Language", "about": "About", "open_recent": "Open Recent", 
-                "jump_to_page_title": "Go to page", "jump_to_page_prompt": "Go to page (1 - {})", "edit_stamp_templates": "Manage Signature Templates...",
-                "templates": "Templates", "template_name": "Template Name", "template_es": "Spanish Template (Pango Markup)",
-                "template_en": "English Template (Pango Markup)", "preview": "Preview", "new": "New", "duplicate": "Duplicate", "save": "Save",
-                "delete": "Delete", "set_as_active": "Set as Active", "unsaved_changes_title": "Unsaved Changes",
-                "unsaved_changes_message": "You have unsaved changes. Do you want to proceed without saving?", "confirm_close_message": "Close without saving changes?",
-                "issuer": "Issuer", "serial": "Serial", "path": "Path", "confirm_delete_cert_title": "Confirm Deletion",
-                "confirm_delete_cert_message": "Are you sure you want to permanently delete this certificate and its saved password?",
-                "copy": "copy", "welcome_prompt": "Open a PDF document to start signing", "welcome_button": "Open PDF..."
-            }
-        }
 
     def _(self, key):
-        return self.translations[self.language].get(key, key)
+        return self.i18n._(key)
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
         self.config.load()
-        self.language = self.config.get_language()
+        self.i18n.set_language(self.config.get_language())
         self.cert_manager.set_cert_paths(self.config.get_cert_paths())
         self._build_actions()
 
@@ -167,8 +124,10 @@ class GnomeSign(Gtk.Application):
         create_cert_selector_dialog(self.window, self)
 
     def on_lang_button_clicked(self, action, param):
-        self.language = "en" if self.language == "es" else "es"
-        self.config.set_language(self.language)
+        current_lang = self.i18n.get_language()
+        new_lang = "en" if current_lang == "es" else "es"
+        self.i18n.set_language(new_lang)
+        self.config.set_language(new_lang)
         self.update_ui()
         
     def on_edit_stamps_clicked(self, action, param):
@@ -311,7 +270,7 @@ class GnomeSign(Gtk.Application):
             template_obj = self.config.get_active_template()
             if not template_obj:
                 return "Error: No active signature template found."
-            template = template_obj.get(f"template_{self.language}", template_obj.get("template_en", ""))
+            template = template_obj.get(f"template_{self.i18n.get_language()}", template_obj.get("template_en", ""))
         
         def get_cn(name):
             try:

@@ -46,15 +46,25 @@ class ConfigManager:
 
     def _create_default_templates_if_needed(self):
         if not self.config_data['signature_templates']:
-            default_id = uuid.uuid4().hex
-            default_template = {
-                "id": default_id,
-                "name": "Default",
+            simple_id = uuid.uuid4().hex
+            simple_template = {
+                "id": simple_id,
+                "name": "Simple",
                 "template_es": "Firmado digitalmente por:\n<b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd-MM-yyyy$$",
                 "template_en": "Digitally signed by:\n<b>$$SUBJECTCN$$</b>\nDate: $$SIGNDATE=yyyy-MM-dd$$"
             }
-            self.config_data['signature_templates'].append(default_template)
-            self.config_data['active_template_id'] = default_id
+            
+            detailed_id = uuid.uuid4().hex
+            detailed_template = {
+                "id": detailed_id,
+                "name": "Detailed",
+                "template_es": "Firmado por: <b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd/MM/yyyy HH:mm:ss$$\nEmisor: $$ISSUERCN$$\nSerie: $$CERTSERIAL$$",
+                "template_en": "Signed by: <b>$$SUBJECTCN$$</b>\nDate: $$SIGNDATE=dd/MM/yyyy HH:mm:ss$$\nIssuer: $$ISSUERCN$$\nSerial: $$CERTSERIAL$$"
+            }
+            
+            self.config_data['signature_templates'].append(simple_template)
+            self.config_data['signature_templates'].append(detailed_template)
+            self.config_data['active_template_id'] = simple_id
             self.save()
 
     def save(self):

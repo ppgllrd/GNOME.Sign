@@ -11,18 +11,21 @@ def create_about_dialog(parent, i18n_func):
     """Creates and shows the About dialog."""
     dialog = Gtk.AboutDialog(transient_for=parent, modal=True)
     dialog.set_program_name("GnomeSign")
-    dialog.set_version("1.6")
+    dialog.set_version("1.0")
     dialog.set_comments(i18n_func("sign_reason"))
     dialog.set_logo_icon_name("org.pepeg.GnomeSign") 
     dialog.set_website("https://github.com/ppgllrd/GNOME.Sign")
-    dialog.set_authors(["pepeg"])
+    dialog.set_authors(["Pepe Gallardo & Gemini"])
     dialog.present()
 
 def create_cert_selector_dialog(parent, app):
-    """Creates a dialog to select a certificate from a list."""
+    """Creates a dialog to select and manage certificates."""
     i18n_func = app._
     dialog = Gtk.Dialog(title=i18n_func("select_certificate"), transient_for=parent, modal=True)
+    
+    # Add buttons to the action area
     dialog.add_button(i18n_func("cancel"), Gtk.ResponseType.CANCEL)
+    dialog.add_button(i18n_func("add_certificate"), Gtk.ResponseType.APPLY)
     
     listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
     cert_details_list = app.cert_manager.get_all_certificate_details()
@@ -35,17 +38,14 @@ def create_cert_selector_dialog(parent, app):
                                        Gtk.MessageType.QUESTION, Gtk.ButtonsType.YES_NO)
         
         if response == Gtk.ResponseType.YES:
-            # Delete from keyring, config, and runtime list
             app.cert_manager.remove_credentials_from_keyring(cert_path)
             app.config.remove_cert_path(cert_path)
             app.cert_manager.remove_cert_path(cert_path)
             
-            # Update UI
             listbox.remove(row_to_delete)
             if app.active_cert_path == cert_path:
                 app.active_cert_path = None
             app.update_ui()
-
 
     for cert in cert_details_list:
         row = Gtk.ListBoxRow()
@@ -94,8 +94,15 @@ def create_cert_selector_dialog(parent, app):
     
     scrolled = Gtk.ScrolledWindow(hscrollbar_policy="never", vscrollbar_policy="automatic", min_content_height=200, max_content_height=400, child=listbox)
     dialog.get_content_area().append(scrolled)
+    
+    def on_dialog_response(d, response_id):
+        if response_id == Gtk.ResponseType.APPLY:
+            # Trigger the "Load Certificate" action and close this dialog
+            app.on_load_certificate_clicked(None, None)
+        d.destroy()
+
+    dialog.connect("response", on_dialog_response)
     dialog.show()
-    dialog.connect("response", lambda d, r: d.destroy())
 
 def create_password_dialog(parent, i18n_func, pkcs12_path, callback):
     """Creates a dialog to ask for a certificate's password."""
@@ -245,7 +252,7 @@ def create_stamp_editor_dialog(parent, app, config):
         cr.paint()
         
         get_buffer = lambda view: view.get_buffer()
-        text_buffer = get_buffer(text_es_view) if app.language == "es" else get_buffer(text_en_view)
+        text_buffer = get_buffer(text_es_view) if app.i18n.get_language() == "es" else get_buffer(text_en_view)
         text = text_buffer.get_text(text_buffer.get_start_iter(), text_buffer.get_end_iter(), False)
 
         if state["loaded_cert"]:
@@ -266,20 +273,16 @@ def create_stamp_editor_dialog(parent, app, config):
         layout.set_alignment(Pango.Alignment.CENTER)
         layout.set_markup(preview_text if preview_text else " ", -1)
         
-        # Use get_pixel_extents to get the true size of the text block
         ink_rect, logical_rect = layout.get_pixel_extents()
         
-        # Calculate scale based on the actual text dimensions (logical_rect)
         scale = min((width - 40) / logical_rect.width if logical_rect.width > 0 else 1, 
                     (h - 20) / logical_rect.height if logical_rect.height > 0 else 1, 1.0)
         
-        # Calculate the final size and position for centering
         final_w = logical_rect.width * scale
         final_h = logical_rect.height * scale
         start_x = (width - final_w) / 2
         start_y = (h - final_h) / 2
         
-        # Translate to the correct position, accounting for Pango's internal origin
         cr.translate(start_x - (logical_rect.x * scale), start_y - (logical_rect.y * scale))
         cr.scale(scale, scale)
 
@@ -288,7 +291,6 @@ def create_stamp_editor_dialog(parent, app, config):
         cr.restore()
 
     preview_area.set_draw_func(draw_preview)
-    # Connect to the resize signal to force a redraw, fixing the centering bug.
     preview_area.connect("resize", lambda area, w, h: area.queue_draw())
 
     def get_current_form_state():
