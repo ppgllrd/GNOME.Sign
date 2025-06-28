@@ -1,4 +1,3 @@
-# ui/dialogs.py
 import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
@@ -83,4 +82,40 @@ def show_message_dialog(parent, title, message, message_type):
     """Displays a simple message dialog."""
     dialog = Gtk.MessageDialog(transient_for=parent, modal=True, message_type=message_type, buttons=Gtk.ButtonsType.OK, text=title, secondary_text=message)
     dialog.connect("response", lambda d, r: d.destroy())
+    dialog.present()
+
+def create_jump_to_page_dialog(parent, i18n_func, current_page, max_page, callback):
+    """
+    Creates a dialog to jump to a specific page.
+    Args:
+        parent: The parent window.
+        i18n_func: The translation function.
+        current_page (int): The current page number (1-based).
+        max_page (int): The total number of pages.
+        callback: Function to call with the selected page number (0-based).
+    """
+    dialog = Gtk.Dialog(title=i18n_func("jump_to_page_title"), transient_for=parent, modal=True)
+    dialog.add_buttons(i18n_func("cancel"), Gtk.ResponseType.CANCEL, i18n_func("accept"), Gtk.ResponseType.OK)
+    
+    content_area = dialog.get_content_area()
+    content_area.set_spacing(10)
+    content_area.set_margin_top(10)
+    content_area.set_margin_bottom(10)
+    content_area.set_margin_start(10)
+    content_area.set_margin_end(10)
+    
+    content_area.append(Gtk.Label(label=i18n_func("jump_to_page_prompt").format(max_page)))
+    
+    adjustment = Gtk.Adjustment(value=current_page, lower=1, upper=max_page, step_increment=1, page_increment=10, page_size=0)
+    spin_button = Gtk.SpinButton(adjustment=adjustment, numeric=True)
+    content_area.append(spin_button)
+    
+    def on_response(d, response_id):
+        page_num = None
+        if response_id == Gtk.ResponseType.OK:
+            page_num = spin_button.get_value_as_int() - 1 # Convert to 0-based index
+        callback(page_num)
+        d.destroy()
+
+    dialog.connect("response", on_response)
     dialog.present()

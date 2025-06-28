@@ -1,12 +1,11 @@
-# ui/app_window.py
 import gi
-import os # <--- CORRECCIÓN DE IMPORTACIÓN
+import os
 gi.require_version("Gtk", "4.0")
-gi.require_version("Secret", "1") # <--- CORRECCIÓN DE IMPORTACIÓN
-from gi.repository import Gtk, Gdk, Gio, Secret, GLib, Pango, PangoCairo # <--- CORRECCIÓN DE IMPORTACIÓN
-from certificate_manager import KEYRING_SCHEMA # <--- CORRECCIÓN DE IMPORTACIÓN
-import fitz # Needed for Matrix
-from gi.repository import GdkPixbuf # Needed for Pixbuf creation
+gi.require_version("Secret", "1")
+from gi.repository import Gtk, Gdk, Gio, Secret, GLib, Pango, PangoCairo
+from certificate_manager import KEYRING_SCHEMA
+import fitz 
+from gi.repository import GdkPixbuf
 
 class AppWindow(Gtk.ApplicationWindow):
     """The main window of the application, responsible for building the UI."""
@@ -15,9 +14,8 @@ class AppWindow(Gtk.ApplicationWindow):
         super().__init__(**kwargs)
         
         app = self.get_application()
-        self.set_title(app._("window_title"))
         self.set_default_size(800, 600)
-
+        self.set_title(app._("window_title"))
         self._build_ui()
 
     def _build_ui(self):
@@ -25,15 +23,30 @@ class AppWindow(Gtk.ApplicationWindow):
         self.header_bar = Gtk.HeaderBar()
         self.set_titlebar(self.header_bar)
         
+        # --- Title Widget ---
+        title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.title_label = Gtk.Label()
+        self.title_label.set_markup(f"<span weight='bold'>{self.get_application()._('window_title')}</span>")
+        self.subtitle_label = Gtk.Label()
+        self.subtitle_label.get_style_context().add_class("caption")
+        title_box.append(self.title_label)
+        title_box.append(self.subtitle_label)
+        self.header_bar.set_title_widget(title_box)
+        
         # --- Left side buttons ---
         self.open_button = Gtk.Button.new_from_icon_name("document-open-symbolic")
         self.header_bar.pack_start(self.open_button)
-        
+
+        nav_box = Gtk.Box(spacing=6)
+        nav_box.get_style_context().add_class("linked")
         self.prev_page_button = Gtk.Button.new_from_icon_name("go-previous-symbolic")
-        self.header_bar.pack_start(self.prev_page_button)
-        
+        self.page_entry_button = Gtk.Button.new_with_label("- / -")
+        self.page_entry_button.get_style_context().add_class("flat")
         self.next_page_button = Gtk.Button.new_from_icon_name("go-next-symbolic")
-        self.header_bar.pack_start(self.next_page_button)
+        nav_box.append(self.prev_page_button)
+        nav_box.append(self.page_entry_button)
+        nav_box.append(self.next_page_button)
+        self.header_bar.pack_start(nav_box)
 
         # --- Right side buttons ---
         self.menu_button = Gtk.MenuButton.new()
@@ -64,6 +77,7 @@ class AppWindow(Gtk.ApplicationWindow):
         self.cert_button.connect("clicked", app.on_cert_button_clicked)
         self.prev_page_button.connect("clicked", app.on_prev_page_clicked)
         self.next_page_button.connect("clicked", app.on_next_page_clicked)
+        self.page_entry_button.connect("clicked", app.on_jump_to_page_clicked)
 
         self.drawing_area.set_draw_func(self._draw_page_and_rect)
         self.drawing_area.connect("resize", self._on_drawing_area_resize)
@@ -76,26 +90,18 @@ class AppWindow(Gtk.ApplicationWindow):
 
     def update_ui(self, app):
         """Updates all UI elements to reflect the application's state."""
-        self.update_title(app)
         self.update_tooltips(app)
         self.update_cert_button_state(app)
-        self.update_navigation_sensitivity(app)
+        self.update_header_bar_state(app)
         self._build_and_set_menu(app)
         self.drawing_area.queue_draw()
-
-    def update_title(self, app):
-        """Updates the window title."""
-        if app.doc:
-            title = f"{app._('window_title')} - {os.path.basename(app.current_file_path)} ({app.current_page + 1}/{len(app.doc)})"
-            self.set_title(title)
-        else:
-            self.set_title(app._("window_title"))
             
     def update_tooltips(self, app):
         """Updates the tooltips for the header bar buttons."""
         self.open_button.set_tooltip_text(app._("open_pdf"))
         self.prev_page_button.set_tooltip_text(app._("prev_page"))
         self.next_page_button.set_tooltip_text(app._("next_page"))
+        self.page_entry_button.set_tooltip_text(app._("jump_to_page_title"))
         self.sign_button.set_tooltip_text(app._("sign_document"))
 
     def update_cert_button_state(self, app):
@@ -116,33 +122,47 @@ class AppWindow(Gtk.ApplicationWindow):
                 app.active_cert_path = first_path
                 self.cert_button.set_tooltip_text(app._("active_certificate").format(first_name))
 
-    def update_navigation_sensitivity(self, app):
-        """Updates the sensitivity of the navigation buttons."""
+    def update_header_bar_state(self, app):
+        """Updates the title, subtitle, and sensitivity of header bar controls."""
         is_doc_loaded = app.doc is not None
+        
+        # Update Title and Subtitle
+        self.title_label.set_markup(f"<span weight='bold'>{app._('window_title')}</span>")
+        if is_doc_loaded:
+            self.subtitle_label.set_text(os.path.basename(app.current_file_path))
+            self.subtitle_label.set_visible(True)
+        else:
+            self.subtitle_label.set_text("")
+            self.subtitle_label.set_visible(False)
+            
+        # Update Navigation Controls
         self.prev_page_button.set_sensitive(is_doc_loaded and app.current_page > 0)
         self.next_page_button.set_sensitive(is_doc_loaded and app.current_page < len(app.doc) - 1)
+        self.page_entry_button.set_sensitive(is_doc_loaded)
+        if is_doc_loaded:
+            self.page_entry_button.set_label(f"{app.current_page + 1} / {len(app.doc)}")
+        else:
+            self.page_entry_button.set_label("- / -")
+
+        # Update Sign Button
         self.sign_button.set_sensitive(is_doc_loaded and app.signature_rect is not None)
 
     def _build_and_set_menu(self, app):
         """Builds the main application menu."""
-        
         menu = Gio.Menu()
         
-        #  Files Submenu
+        # Open is now a main button, but can also live in the menu for consistency
+        menu.append(app._("open_pdf"), "app.open")
+
+        # Recent Files Submenu
         recent_files_menu = Gio.Menu.new()
         recent_files = app.config.get_recent_files()
-        for i, file_path in enumerate(recent_files):
-            display_name = os.path.basename(file_path)
-            action_with_param = f"app.open_recent('{file_path}')"
-            recent_files_menu.append(display_name, action_with_param)
-            
-        recent_submenu_item = Gio.MenuItem.new_submenu(app._("open_recent"), recent_files_menu)
-        
-        # Main Actions
-        main_section = Gio.Menu()
-        main_section.append(app._("open_pdf"), "app.open")
-        main_section.append_item(recent_submenu_item)
-        menu.append_section(None, main_section)
+        if recent_files:
+            for i, file_path in enumerate(recent_files):
+                display_name = os.path.basename(file_path)
+                action_with_param = f"app.open_recent('{file_path}')"
+                recent_files_menu.append(display_name, action_with_param)
+            menu.append_submenu(app._("open_recent"), recent_files_menu)
 
         # Sign Actions
         sign_section = Gio.Menu()
@@ -167,16 +187,28 @@ class AppWindow(Gtk.ApplicationWindow):
         """Handles the resize event of the drawing area."""
         app = self.get_application()
         if app.page:
+            # Force the pixbuf to be re-rendered with the new zoom level
             app.display_pixbuf = None
-            if app.page.rect.width > 0:
-                target_h = width * (app.page.rect.height / app.page.rect.width)
-                area.set_size_request(-1, int(target_h))
+        self.update_drawing_area_size_request()
+
+    def update_drawing_area_size_request(self):
+        """Calculates and sets the drawing area's height request based on its current
+        width and the loaded page's aspect ratio. This enables the ScrolledWindow."""
+        app = self.get_application()
+        if not app.page:
+            return
+
+        width = self.drawing_area.get_width()
+        if width > 0 and app.page.rect.width > 0:
+            target_h = width * (app.page.rect.height / app.page.rect.width)
+            # Avoid getting into a resize-loop by checking if the value is different
+            if abs(self.drawing_area.get_property("height-request") - int(target_h)) > 1:
+                self.drawing_area.set_size_request(-1, int(target_h))
 
     def _draw_page_and_rect(self, drawing_area, cr, width, height):
         """The main draw function for the drawing area."""
         app = self.get_application()
         
-        # Draw the PDF page
         if app.page and width > 0:
             if not app.display_pixbuf or app.display_pixbuf.get_width() != width:
                 zoom = width / app.page.rect.width
@@ -186,27 +218,45 @@ class AppWindow(Gtk.ApplicationWindow):
             Gdk.cairo_set_source_pixbuf(cr, app.display_pixbuf, 0, 0)
             cr.paint()
         
-        # Draw the signature rectangle preview
         rect_to_draw = app.signature_rect or ((min(app.start_x, app.end_x), min(app.start_y, app.end_y), abs(app.end_x - app.start_x), abs(app.end_y - app.start_y)) if app.start_x != -1 else None)
         if not rect_to_draw: return
-        x, y, w, h = rect_to_draw
-        cr.set_source_rgb(0.0, 0.5, 0.0); cr.set_line_width(1.5); cr.rectangle(x, y, w, h); cr.stroke_preserve()
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.8); cr.fill()
         
-        # Draw the text preview inside the rectangle
+        x, y, w, h = rect_to_draw
+        
+        cr.set_source_rgb(0.0, 0.5, 0.0)  
+        cr.set_line_width(1.5)
+        cr.rectangle(x, y, w, h)
+        cr.stroke_preserve() 
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.8) 
+        cr.fill()
+        
         if w > 20 and h > 20 and app.active_cert_path:
             password = Secret.password_lookup_sync(KEYRING_SCHEMA, {"path": app.active_cert_path}, None)
             if not password: return
             _, certificate = app.cert_manager.get_credentials(app.active_cert_path, password)
             if not certificate: return
+            
             layout = PangoCairo.create_layout(cr)
-            layout.set_width(Pango.units_from_double(w - 10))
+            layout.set_width(Pango.units_from_double(w - 10)) 
             layout.set_alignment(Pango.Alignment.CENTER)
-            font_size_main = max(7, min(h / 4.5, w / 18)); font_size_small = font_size_main * 0.85
+            layout.set_line_spacing(1.2) 
+
+            font_size_main = max(8, min(h / 4.5, w / 18))
+            font_size_small = font_size_main * 0.85
+
             signer_cn = certificate.subject.rfc4514_string().split('CN=')[1].split(',')[0]
             current_date = app.get_formatted_date()
-            markup_text = f"<span font_size='{font_size_small}pt'>{app._('digitally_signed_by')}</span>\n<b><span font_size='{font_size_main}pt'>{signer_cn}</span></b>\n<span font_size='{font_size_small * 0.9}pt'>{app._('date')} {current_date}</span>"
+            
+            markup_text = (
+                f"<span size='{font_size_small}pt'>{app._('digitally_signed_by')}</span>\n"
+                f"<b><span size='{font_size_main}pt'>{signer_cn}</span></b>\n"
+                f"<span size='{font_size_small * 0.9}pt'>{app._('date')} {current_date}</span>"
+            )
             layout.set_markup(markup_text, -1)
+
             _, text_height = layout.get_pixel_size()
-            cr.move_to(x + 5, y + (h - text_height) / 2)
-            cr.set_source_rgb(0, 0, 0); PangoCairo.show_layout(cr, layout)
+            text_y = y + (h - text_height) / 2
+            
+            cr.move_to(x + 5, text_y) 
+            cr.set_source_rgb(0, 0, 0) 
+            PangoCairo.show_layout(cr, layout)
