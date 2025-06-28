@@ -1,5 +1,6 @@
 import gi
 import os
+import re
 gi.require_version("Gtk", "4.0")
 gi.require_version("Secret", "1")
 gi.require_version("PangoCairo", "1.0")
@@ -263,17 +264,38 @@ class AppWindow(Gtk.ApplicationWindow):
             _, certificate = app.cert_manager.get_credentials(app.active_cert_path, password)
             if not certificate: return
             
+            cr.save()
+            
             layout = PangoCairo.create_layout(cr)
             layout.set_width(Pango.units_from_double(w - 10))
             layout.set_alignment(Pango.Alignment.CENTER)
-            layout.set_line_spacing(1.2)
-
+            
             markup_text = app.get_parsed_stamp_text(certificate, for_html=False)
             layout.set_markup(markup_text, -1)
 
-            _, text_height = layout.get_pixel_size()
-            text_y = y + (h - text_height) / 2
+            # --- DYNAMIC SCALING LOGIC ---
+            # Measure the actual size of the rendered text
+            ink_rect, logical_rect = layout.get_pixel_extents()
             
-            cr.move_to(x + 5, text_y)
+            # Calculate scale factor to fit the text inside the box (with padding)
+            available_width = w - 10
+            available_height = h - 10
+            scale_x = available_width / logical_rect.width if logical_rect.width > 0 else 1
+            scale_y = available_height / logical_rect.height if logical_rect.height > 0 else 1
+            scale = min(scale_x, scale_y, 1.0) # Do not scale up, only down
+            
+            # Calculate the final dimensions and position for centering
+            final_width = logical_rect.width * scale
+            final_height = logical_rect.height * scale
+            
+            final_x = x + (w - final_width) / 2
+            final_y = y + (h - final_height) / 2
+            
+            # Translate to the correct position and apply scale
+            cr.translate(final_x - (logical_rect.x * scale), final_y - (logical_rect.y * scale))
+            cr.scale(scale, scale)
+
             cr.set_source_rgb(0, 0, 0)
             PangoCairo.show_layout(cr, layout)
+            
+            cr.restore()
