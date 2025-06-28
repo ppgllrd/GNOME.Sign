@@ -1,6 +1,6 @@
-# config_manager.py
 import os
 import json
+import uuid
 from collections import deque
 
 class ConfigManager:
@@ -26,13 +26,32 @@ class ConfigManager:
             with open(self.config_file, 'r') as f:
                 self.config_data = json.load(f)
         except (IOError, json.JSONDecodeError):
-            self.config_data = {"certificates": [], "recent_files": []}
+            self.config_data = {}
         
         # Ensure default keys exist
         if 'certificates' not in self.config_data:
             self.config_data['certificates'] = []
         if 'recent_files' not in self.config_data:
             self.config_data['recent_files'] = []
+        if 'signature_templates' not in self.config_data:
+            self.config_data['signature_templates'] = []
+        if 'active_template_id' not in self.config_data:
+            self.config_data['active_template_id'] = None
+
+        self._create_default_templates_if_needed()
+
+    def _create_default_templates_if_needed(self):
+        if not self.config_data['signature_templates']:
+            default_id = uuid.uuid4().hex
+            default_template = {
+                "id": default_id,
+                "name": "Default",
+                "template_es": "Firmado digitalmente por:\n<b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd-MM-yyyy$$",
+                "template_en": "Digitally signed by:\n<b>$$SUBJECTCN$$</b>\nDate: $$SIGNDATE=yyyy-MM-dd$$"
+            }
+            self.config_data['signature_templates'].append(default_template)
+            self.config_data['active_template_id'] = default_id
+            self.save()
 
     def save(self):
         """Saves the current configuration to the JSON file."""
@@ -68,3 +87,47 @@ class ConfigManager:
         """Removes a file path from the recent files list."""
         if file_path in self.config_data["recent_files"]:
             self.config_data["recent_files"].remove(file_path)
+            
+    def get_signature_templates(self):
+        return self.config_data.get("signature_templates", [])
+
+    def get_template_by_id(self, template_id):
+        for template in self.get_signature_templates():
+            if template['id'] == template_id:
+                return template
+        return None
+
+    def save_template(self, template_data):
+        templates = self.get_signature_templates()
+        # Check if it's an existing template to update it
+        for i, t in enumerate(templates):
+            if t['id'] == template_data['id']:
+                templates[i] = template_data
+                self.save()
+                return
+        # If not found, it's a new template
+        templates.append(template_data)
+        self.save()
+
+    def delete_template(self, template_id):
+        templates = self.get_signature_templates()
+        self.config_data['signature_templates'] = [t for t in templates if t['id'] != template_id]
+        if self.get_active_template_id() == template_id:
+            if self.config_data['signature_templates']:
+                self.set_active_template_id(self.config_data['signature_templates'][0]['id'])
+            else:
+                self.set_active_template_id(None)
+        self.save()
+
+    def get_active_template_id(self):
+        return self.config_data.get('active_template_id')
+
+    def set_active_template_id(self, template_id):
+        self.config_data['active_template_id'] = template_id
+        self.save()
+
+    def get_active_template(self):
+        active_id = self.get_active_template_id()
+        if not active_id:
+            return None
+        return self.get_template_by_id(active_id)

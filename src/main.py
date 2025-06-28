@@ -6,6 +6,7 @@ import fitz  # PyMuPDF
 import os
 import sys
 import shutil
+import re
 from datetime import datetime
 
 from certificate_manager import CertificateManager, KEYRING_SCHEMA
@@ -13,13 +14,14 @@ from config_manager import ConfigManager
 from ui.app_window import AppWindow
 from ui.dialogs import (create_about_dialog, create_cert_selector_dialog, 
                         create_password_dialog, show_message_dialog,
-                        create_jump_to_page_dialog)
+                        create_jump_to_page_dialog, create_stamp_editor_dialog)
 
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign import signers
 from pyhanko.sign.signers.pdf_signer import PdfSigner, PdfSignatureMetadata
 from pyhanko.keys.internal import translate_pyca_cryptography_key_to_asn1, translate_pyca_cryptography_cert_to_asn1
 from pyhanko_certvalidator.registry import SimpleCertificateStore
+from cryptography import x509
 
 class GnomeSign(Gtk.Application):
     """
@@ -38,15 +40,12 @@ class GnomeSign(Gtk.Application):
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
         self.language = "es"
         self.translations = {
-            "es": {"window_title": "GnomeSign", "open_pdf": "Abrir PDF...", "prev_page": "Página anterior", "next_page": "Página siguiente", "sign_document": "Firmar Documento", "load_certificate": "Cargar Certificado...", "select_certificate": "Seleccionar Certificado", "no_certificate_selected": "Sin certificado", "active_certificate": "Certificado activo: {}", "sign_reason": "Firmado con GNOMESign", "error": "Error", "success": "Éxito", "question": "Pregunta", "password": "Contraseña", "sig_error_title": "Error de Firma", "sig_error_message": "Error: {}", "need_pdf_and_area": "Necesitas abrir un PDF y seleccionar un área de firma.", "no_cert_selected_error": "No hay un certificado seleccionado.", "credential_load_error": "No se pudieron cargar las credenciales del certificado.", "sign_success_title": "Documento Firmado Correctamente", "sign_success_message": "Guardado en:\n{}\n\n¿Quieres abrir el documento firmado ahora?", "open_pdf_error": "No se pudo abrir el PDF: {}", "cert_load_success": "Certificado '{}' cargado.", "bad_password_or_file": "Contraseña incorrecta o archivo dañado.", "open_pdf_dialog_title": "Abrir Documento PDF", "open_cert_dialog_title": "Seleccionar Archivo de Certificado (.p12/.pfx)", "open": "_Abrir", "cancel": "_Cancelar", "accept": "_Aceptar", "pdf_files": "Archivos PDF", "p12_files": "Archivos PKCS#12 (.p12, .pfx)", "digitally_signed_by": "Firmado digitalmente por:", "date": "Fecha:", "change_language": "Cambiar Idioma", "about": "Acerca de", "open_recent": "Abrir Recientes", "jump_to_page_title": "Ir a la página", "jump_to_page_prompt": "Ir a la página (1 - {})"},
-            "en": {"window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", "sign_document": "Sign Document", "load_certificate": "Load Certificate...", "select_certificate": "Select certificate", "no_certificate_selected": "No certificate", "active_certificate": "Active certificate: {}", "sign_reason": "Signed with GNOMESign", "error": "Error", "success": "Success", "question": "Question", "password": "Password", "sig_error_title": "Signature Error", "sig_error_message": "Error: {}", "need_pdf_and_area": "You need to open a PDF and select a signature area.", "no_cert_selected_error": "No certificate selected.", "credential_load_error": "Could not load certificate credentials.", "sign_success_title": "Document Signed Successfully", "sign_success_message": "Saved at:\n{}\n\nDo you want to open the signed document now?", "open_pdf_error": "Could not open PDF: {}", "cert_load_success": "Certificate '{}' loaded successfully.", "bad_password_or_file": "Incorrect password or corrupted file.", "open_pdf_dialog_title": "Open PDF Document", "open_cert_dialog_title": "Select Certificate File (.p12/.pfx)", "open": "_Open", "cancel": "_Cancel", "accept": "_Accept", "pdf_files": "PDF Files", "p12_files": "PKCS#12 Files (.p12, .pfx)", "digitally_signed_by": "Digitally signed by:", "date": "Date:", "change_language": "Change Language", "about": "About", "open_recent": "Open Recent", "jump_to_page_title": "Go to page", "jump_to_page_prompt": "Go to page (1 - {})"}
+            "es": {"window_title": "GnomeSign", "open_pdf": "Abrir PDF...", "prev_page": "Página anterior", "next_page": "Página siguiente", "sign_document": "Firmar Documento", "load_certificate": "Cargar Certificado...", "select_certificate": "Seleccionar Certificado", "no_certificate_selected": "Sin certificado", "active_certificate": "Certificado activo: {}", "sign_reason": "Firmado con GNOMESign", "error": "Error", "success": "Éxito", "question": "Pregunta", "password": "Contraseña", "sig_error_title": "Error de Firma", "sig_error_message": "Error: {}", "need_pdf_and_area": "Necesitas abrir un PDF y seleccionar un área de firma.", "no_cert_selected_error": "No hay un certificado seleccionado.", "credential_load_error": "No se pudieron cargar las credenciales del certificado.", "sign_success_title": "Documento Firmado Correctamente", "sign_success_message": "Guardado en:\n{}\n\n¿Quieres abrir el documento firmado ahora?", "open_pdf_error": "No se pudo abrir el PDF: {}", "cert_load_success": "Certificado '{}' cargado.", "bad_password_or_file": "Contraseña incorrecta o archivo dañado.", "open_pdf_dialog_title": "Abrir Documento PDF", "open_cert_dialog_title": "Seleccionar Archivo de Certificado (.p12/.pfx)", "open": "_Abrir", "cancel": "_Cancelar", "accept": "_Aceptar", "pdf_files": "Archivos PDF", "p12_files": "Archivos PKCS#12 (.p12, .pfx)", "digitally_signed_by": "Firmado digitalmente por:", "date": "Fecha:", "change_language": "Cambiar Idioma", "about": "Acerca de", "open_recent": "Abrir Recientes", "jump_to_page_title": "Ir a la página", "jump_to_page_prompt": "Ir a la página (1 - {})", "edit_stamp_templates": "Gestionar Plantillas de Firma..."},
+            "en": {"window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", "sign_document": "Sign Document", "load_certificate": "Load Certificate...", "select_certificate": "Select certificate", "no_certificate_selected": "No certificate", "active_certificate": "Active certificate: {}", "sign_reason": "Signed with GNOMESign", "error": "Error", "success": "Success", "question": "Question", "password": "Password", "sig_error_title": "Signature Error", "sig_error_message": "Error: {}", "need_pdf_and_area": "You need to open a PDF and select a signature area.", "no_cert_selected_error": "No certificate selected.", "credential_load_error": "Could not load certificate credentials.", "sign_success_title": "Document Signed Successfully", "sign_success_message": "Saved at:\n{}\n\nDo you want to open the signed document now?", "open_pdf_error": "Could not open PDF: {}", "cert_load_success": "Certificate '{}' loaded successfully.", "bad_password_or_file": "Incorrect password or corrupted file.", "open_pdf_dialog_title": "Open PDF Document", "open_cert_dialog_title": "Select Certificate File (.p12/.pfx)", "open": "_Open", "cancel": "_Cancel", "accept": "_Accept", "pdf_files": "PDF Files", "p12_files": "PKCS#12 Files (.p12, .pfx)", "digitally_signed_by": "Digitally signed by:", "date": "Date:", "change_language": "Change Language", "about": "About", "open_recent": "Open Recent", "jump_to_page_title": "Go to page", "jump_to_page_prompt": "Go to page (1 - {})", "edit_stamp_templates": "Manage Signature Templates..."}
         }
 
     def _(self, key):
         return self.translations[self.language].get(key, key)
-
-    def get_formatted_date(self):
-        return datetime.now().strftime('%d-%m-%Y' if self.language == "es" else '%Y-%m-%d')
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
@@ -67,6 +66,7 @@ class GnomeSign(Gtk.Application):
             ("change_lang", self.on_lang_button_clicked),
             ("about", lambda a, p: create_about_dialog(self.window, self._)),
             ("open_recent", self.on_open_recent_clicked, "s"),
+            ("edit_stamps", self.on_edit_stamps_clicked),
         ]
         for name, callback, *param_type in actions:
             action = Gio.SimpleAction.new(name, GLib.VariantType(param_type[0]) if param_type else None)
@@ -120,6 +120,9 @@ class GnomeSign(Gtk.Application):
     def on_lang_button_clicked(self, action, param):
         self.language = "en" if self.language == "es" else "es"
         self.update_ui()
+        
+    def on_edit_stamps_clicked(self, action, param):
+        create_stamp_editor_dialog(self.window, self, self._, self.config)
 
     def on_sign_document_clicked(self, action=None, param=None):
         if not all([self.doc, self.signature_rect, self.current_file_path, self.active_cert_path]):
@@ -140,7 +143,7 @@ class GnomeSign(Gtk.Application):
         try:
             self._apply_visual_stamp(output_path, certificate)
             signer = signers.SimpleSigner(translate_pyca_cryptography_cert_to_asn1(certificate), translate_pyca_cryptography_key_to_asn1(private_key), SimpleCertificateStore())
-            signer_cn = certificate.subject.rfc4514_string().split('CN=')[1].split(',')[0]
+            signer_cn = certificate.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
             meta = PdfSignatureMetadata(field_name=f'Signature-{int(datetime.now().timestamp() * 1000)}', reason=self._("sign_reason"), name=signer_cn)
             pdf_signer = PdfSigner(meta, signer)
             with open(output_path, "rb+") as f:
@@ -181,9 +184,9 @@ class GnomeSign(Gtk.Application):
             self.page, self.doc, self.current_file_path, self.display_pixbuf = None, None, None, None
         
         if hasattr(self, 'window'):
+            self.window.reset_scroll()
             self.window.update_header_bar_state(self)
             self.window.drawing_area.queue_draw()
-            # Ensure the scrollable area size is recalculated
             self.window.update_drawing_area_size_request()
 
     def on_prev_page_clicked(self, button):
@@ -232,7 +235,6 @@ class GnomeSign(Gtk.Application):
         self.window.sign_button.set_sensitive(False)
         self.window.drawing_area.queue_draw()
 
-
     def on_drag_update(self, gesture, offset_x, offset_y):
         success, start_point_x, start_point_y = gesture.get_start_point()
         if not success: return
@@ -254,6 +256,44 @@ class GnomeSign(Gtk.Application):
             self.window.update_header_bar_state(self)
             self.window.drawing_area.queue_draw()
 
+    def get_parsed_stamp_text(self, certificate, for_html=False):
+        template_obj = self.config.get_active_template()
+        if not template_obj:
+            return "Error: No active signature template found."
+
+        template = template_obj.get(f"template_{self.language}", template_obj.get("template_en", ""))
+        
+        def get_cn(name):
+            try:
+                return name.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
+            except (IndexError, AttributeError):
+                return name.rfc4514_string()
+
+        subject_cn = get_cn(certificate.subject)
+        issuer_cn = get_cn(certificate.issuer)
+        cert_serial = str(certificate.serial_number)
+        
+        # Replace simple placeholders
+        text = template.replace("$$SUBJECTCN$$", subject_cn)
+        text = text.replace("$$ISSUERCN$$", issuer_cn)
+        text = text.replace("$$CERTSERIAL$$", cert_serial)
+
+        # Replace date placeholder
+        date_match = re.search(r'\$\$SIGNDATE=(.*?)\$\$', text)
+        if date_match:
+            format_pattern = date_match.group(1)
+            # Basic translation from SimpleDateFormat to strftime
+            py_format = format_pattern.replace("dd", "%d").replace("MM", "%m").replace("yyyy", "%Y").replace("yy", "%y")
+            py_format = py_format.replace("HH", "%H").replace("mm", "%M").replace("ss", "%S")
+            formatted_date = datetime.now().strftime(py_format)
+            text = text.replace(date_match.group(0), formatted_date)
+        
+        # For PyMuPDF HTML, convert newlines to <br>
+        if for_html:
+            text = text.replace("\n", "<br>")
+            
+        return text
+
     def _apply_visual_stamp(self, input_path, certificate):
         doc = fitz.open(input_path)
         page = doc.load_page(self.current_page)
@@ -261,21 +301,20 @@ class GnomeSign(Gtk.Application):
         scale = page.rect.width / view_width if view_width > 0 else 1
         x, y, w, h = self.signature_rect
         fitz_rect = fitz.Rect(x * scale, y * scale, (x + w) * scale, (y + h) * scale)
-        page.draw_rect(fitz_rect, color=None, fill=(1.0, 1.0, 1.0), fill_opacity=1.0, overlay=True)
-        signer_cn = certificate.subject.rfc4514_string().split('CN=')[1].split(',')[0]
-        current_date = self.get_formatted_date()
+
+        page.draw_rect(fitz_rect, color=None, fill=(1.0, 1.0, 1.0), fill_opacity=1.0, overlay=False)
+        page.draw_rect(fitz_rect, color=(0.0, 0.5, 0.0), width=1.5, overlay=True)
+
+        parsed_text_for_html = self.get_parsed_stamp_text(certificate, for_html=True)
+
         html_content = f"""
-        <div style="
-            text-align: center; 
-            font-family: helvetica, sans-serif; 
-            line-height: 1.3;
-        ">
-            <p style="margin: 0; font-size: 8pt;">{self._("digitally_signed_by")}</p>
-            <p style="margin: 2px 0; font-size: 9pt; font-weight: bold;">{signer_cn}</p>
-            <p style="margin: 0; font-size: 7pt;">{self._("date")} {current_date}</p>
+        <div style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-family: sans-serif; font-size: 8pt; line-height: 1.2;">
+            {parsed_text_for_html}
         </div>
         """
-        page.insert_htmlbox(fitz_rect, html_content, css="p {padding: 0;}")
+        html_rect = fitz_rect + (5, 5, -5, -5)
+        page.insert_htmlbox(html_rect, html_content, rotate=0, css="b { font-size: 9pt; }")
+
         doc.save(input_path, incremental=True, encryption=0); doc.close()
 
     def _ask_to_open_new_file(self, file_path):
