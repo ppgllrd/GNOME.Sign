@@ -6,6 +6,7 @@ import os
 import uuid
 import copy
 from certificate_manager import KEYRING_SCHEMA
+from datetime import datetime, timedelta, timezone
 
 def create_about_dialog(parent, i18n_func):
     """Creates and shows the About dialog."""
@@ -65,11 +66,25 @@ def create_cert_selector_dialog(parent, app):
         subject_label.set_markup(f"<b><big>{cert['subject_cn']}</big></b>")
         item_box.append(subject_label)
 
+        # --- INICIO DEL CAMBIO ---
+        # Get current time as an offset-aware datetime object
+        now = datetime.now(timezone.utc)
+        expires = cert['expires']
+        # --- FIN DEL CAMBIO ---
+        
+        if expires < now:
+            expiry_markup = f"<span color='red'><b>Expires:</b> {expires.strftime('%Y-%m-%d')} (Expired)</span>"
+        elif expires < (now + timedelta(days=30)):
+            expiry_markup = f"<span color='orange'><b>Expires:</b> {expires.strftime('%Y-%m-%d')}</span>"
+        else:
+            expiry_markup = f"<b>Expires:</b> {expires.strftime('%Y-%m-%d')}"
+
         details_label = Gtk.Label(xalign=0)
         details_label.set_wrap(True)
         details_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         details_text = (
-            f"<small><i>{i18n_func('issuer')}:</i> {cert['issuer_cn']}\n"
+            f"<small>{expiry_markup}\n"
+            f"<i>{i18n_func('issuer')}:</i> {cert['issuer_cn']}\n"
             f"<i>{i18n_func('serial')}:</i> {cert['serial']}\n"
             f"<i>{i18n_func('path')}:</i> {cert['path']}</small>"
         )

@@ -8,6 +8,7 @@ from gi.repository import Gtk, Gdk, Gio, Secret, GLib, Pango, PangoCairo
 from certificate_manager import KEYRING_SCHEMA
 import fitz 
 from gi.repository import GdkPixbuf
+from .dialogs import show_message_dialog
 
 class AppWindow(Gtk.ApplicationWindow):
     """The main window of the application, responsible for building the UI."""
@@ -20,6 +21,7 @@ class AppWindow(Gtk.ApplicationWindow):
         self.set_title(app._("window_title"))
         self.set_icon_name("org.pepeg.GnomeSign")
         self._build_ui()
+        self._setup_drop_target()
 
     def _build_ui(self):
         """Constructs the user interface."""
@@ -53,26 +55,32 @@ class AppWindow(Gtk.ApplicationWindow):
         self.menu_button = Gtk.MenuButton.new()
         self.menu_button.set_icon_name("open-menu-symbolic")
         self.header_bar.pack_end(self.menu_button)
-        
-        self.sign_button = Gtk.Button.new_from_icon_name("document-edit-symbolic")
-        self.header_bar.pack_end(self.sign_button)
 
-        self.cert_button = Gtk.Button.new_from_icon_name("dialog-password-symbolic")
-        self.header_bar.pack_end(self.cert_button)
-        
-        # --- Main Content Stack ---
-        self.stack = Gtk.Stack()
-        self.stack.set_transition_type(Gtk.StackTransitionType.SLIDE_UP_DOWN)
-        self.set_child(self.stack)
+        main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.set_child(main_vbox)
 
-        # PDF View
+        self.info_bar = Gtk.InfoBar()
+        self.info_bar.set_revealed(False)
+        self.info_bar.set_show_close_button(True)
+        self.info_bar.connect("response", lambda bar, res: bar.set_revealed(False))
+        self.info_label = Gtk.Label()
+        self.info_bar.add_child(self.info_label)
+        main_vbox.append(self.info_bar)
+
+        self.main_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        self.main_paned.set_vexpand(True)
+        main_vbox.append(self.main_paned)
+        
+        self.view_stack = Gtk.Stack()
+        self.view_stack.set_transition_type(Gtk.StackTransitionType.SLIDE_UP_DOWN)
+        self.main_paned.set_start_child(self.view_stack)
+
         self.drawing_area = Gtk.DrawingArea(hexpand=True, vexpand=True)
         self.scrolled_window = Gtk.ScrolledWindow()
         self.scrolled_window.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.scrolled_window.set_child(self.drawing_area)
-        self.stack.add_named(self.scrolled_window, "pdf_view")
+        self.view_stack.add_named(self.scrolled_window, "pdf_view")
         
-        # Welcome View
         welcome_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12,
                               valign=Gtk.Align.CENTER, halign=Gtk.Align.CENTER)
         welcome_icon = Gtk.Image.new_from_icon_name("org.pepeg.GnomeSign")
@@ -84,25 +92,56 @@ class AppWindow(Gtk.ApplicationWindow):
         welcome_box.append(welcome_icon)
         welcome_box.append(self.welcome_label)
         welcome_box.append(self.welcome_button)
-        self.stack.add_named(welcome_box, "welcome_view")
-        
-        self.welcome_button.connect("clicked", lambda w: self.get_application().activate_action("open"))
+        self.view_stack.add_named(welcome_box, "welcome_view")
+
+        self._build_signature_panel()
+        self.main_paned.set_end_child(self.signature_panel)
+        self.signature_panel.set_visible(False)
 
         self._connect_signals()
 
+    def _build_signature_panel(self):
+        app = self.get_application()
+        self.signature_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin_start=12, margin_end=12, margin_top=12, margin_bottom=12, width_request=280)
+
+        self.signature_panel.append(Gtk.Label(label=f"<b>{app._('sign_document')}</b>", use_markup=True, xalign=0))
+        
+        self.stamp_preview = Gtk.DrawingArea(height_request=120, vexpand=False)
+        self.stamp_preview.get_style_context().add_class("view")
+        self.signature_panel.append(self.stamp_preview)
+        
+        self.signature_panel.append(Gtk.Label(label=app._("select_certificate"), xalign=0))
+        self.cert_combo = Gtk.ComboBoxText()
+        self.signature_panel.append(self.cert_combo)
+
+        self.signature_panel.append(Gtk.Label(label=app._("templates"), xalign=0))
+        self.template_combo = Gtk.ComboBoxText()
+        self.signature_panel.append(self.template_combo)
+        
+        action_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, valign=Gtk.Align.END, vexpand=True)
+        self.sign_button_panel = Gtk.Button(label=app._("sign_document"))
+        self.sign_button_panel.get_style_context().add_class("suggested-action")
+        action_box.append(self.sign_button_panel)
+        self.signature_panel.append(action_box)
+
+
     def _connect_signals(self):
-        """Connects widget signals to application actions or internal handlers."""
         app = self.get_application()
         
         self.open_button.connect("clicked", lambda w: app.activate_action("open"))
-        self.sign_button.connect("clicked", lambda w: app.activate_action("sign"))
-        self.cert_button.connect("clicked", lambda w: app.activate_action("select_cert"))
+        self.sign_button_panel.connect("clicked", lambda w: app.activate_action("sign"))
+
         self.prev_page_button.connect("clicked", app.on_prev_page_clicked)
         self.next_page_button.connect("clicked", app.on_next_page_clicked)
         self.page_entry_button.connect("clicked", app.on_jump_to_page_clicked)
+        self.welcome_button.connect("clicked", lambda w: app.activate_action("open"))
 
         self.drawing_area.set_draw_func(self._draw_page_and_rect)
         self.drawing_area.connect("resize", self._on_drawing_area_resize)
+
+        click_gesture = Gtk.GestureClick.new()
+        click_gesture.connect("pressed", self._on_drawing_area_clicked)
+        self.drawing_area.add_controller(click_gesture)
 
         drag_gesture = Gtk.GestureDrag.new()
         drag_gesture.connect("drag-begin", app.on_drag_begin)
@@ -110,53 +149,55 @@ class AppWindow(Gtk.ApplicationWindow):
         drag_gesture.connect("drag-end", app.on_drag_end)
         self.drawing_area.add_controller(drag_gesture)
 
+        self.stamp_preview.set_draw_func(self._draw_stamp_preview)
+        self.cert_combo.connect("changed", self._on_panel_cert_changed)
+        self.template_combo.connect("changed", lambda w: self.stamp_preview.queue_draw())
+
+    def _setup_drop_target(self):
+        drop_target = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
+        drop_target.connect("drop", self._on_file_drop)
+        self.add_controller(drop_target)
+
+    def _on_drawing_area_clicked(self, gesture, n_press, x, y):
+        app = self.get_application()
+        if app.signature_rect:
+            rect_for_drawing = self.get_signature_rect_for_drawing()
+            if not (rect_for_drawing and rect_for_drawing.x <= x <= rect_for_drawing.x + rect_for_drawing.width and
+                    rect_for_drawing.y <= y <= rect_for_drawing.y + rect_for_drawing.height):
+                app.reset_signature_state()
+        
+    def _on_file_drop(self, target, value, x, y):
+        app = self.get_application()
+        file_list = value.get_files()
+        if file_list and len(file_list) > 0:
+            file_path = file_list[0].get_path()
+            if file_path and file_path.lower().endswith('.pdf'):
+                app.open_file_path(file_path)
+                return True
+        return False
+
     def update_ui(self, app):
-        """Updates all UI elements to reflect the application's state."""
         self.title_label.set_markup(f"<span weight='bold'>{app._('window_title')}</span>")
         self.welcome_label.set_markup(f"<span size='large'>{app._('welcome_prompt')}</span>")
         self.welcome_button.set_label(app._("welcome_button"))
         
         self.update_tooltips(app)
-        self.update_cert_button_state(app)
         self.update_header_bar_state(app)
         self._build_and_set_menu(app)
         self.drawing_area.queue_draw()
+        if self.signature_panel.get_visible():
+            self.update_signature_panel()
             
     def update_tooltips(self, app):
-        """Updates the tooltips for the header bar buttons."""
         self.open_button.set_tooltip_text(app._("open_pdf"))
         self.prev_page_button.set_tooltip_text(app._("prev_page"))
         self.next_page_button.set_tooltip_text(app._("next_page"))
         self.page_entry_button.set_tooltip_text(app._("jump_to_page_title"))
-        self.sign_button.set_tooltip_text(app._("sign_document"))
-        self.cert_button.set_tooltip_text(app._("select_certificate"))
-
-
-    def update_cert_button_state(self, app):
-        """Updates the state and tooltip of the certificate button."""
-        cert_details = app.cert_manager.get_all_certificate_details()
-        self.cert_button.set_sensitive(bool(cert_details))
-        if not cert_details:
-            app.active_cert_path = None
-            self.cert_button.set_tooltip_text(app._("no_certificate_selected"))
-            return
-
-        active_cert_details = next((c for c in cert_details if c['path'] == app.active_cert_path), None)
-
-        if active_cert_details:
-            self.cert_button.set_tooltip_text(app._("active_certificate").format(active_cert_details['subject_cn']))
-        else:
-            # If no active cert or active cert not found, default to first one
-            app.active_cert_path = cert_details[0]['path']
-            self.cert_button.set_tooltip_text(app._("active_certificate").format(cert_details[0]['subject_cn']))
-
 
     def update_header_bar_state(self, app):
-        """Updates the title, subtitle, and sensitivity of header bar controls."""
         is_doc_loaded = app.doc is not None
         
-        # Switch between Welcome and PDF view
-        self.stack.set_visible_child_name("pdf_view" if is_doc_loaded else "welcome_view")
+        self.view_stack.set_visible_child_name("pdf_view" if is_doc_loaded else "welcome_view")
 
         self.title_label.set_markup(f"<span weight='bold'>{app._('window_title')}</span>")
         if is_doc_loaded:
@@ -165,6 +206,7 @@ class AppWindow(Gtk.ApplicationWindow):
         else:
             self.subtitle_label.set_text("")
             self.subtitle_label.set_visible(False)
+            self.hide_signature_panel()
             
         self.prev_page_button.set_sensitive(is_doc_loaded and app.current_page > 0)
         self.next_page_button.set_sensitive(is_doc_loaded and app.current_page < len(app.doc) - 1)
@@ -174,14 +216,10 @@ class AppWindow(Gtk.ApplicationWindow):
         else:
             self.page_entry_button.set_label("- / -")
 
-        self.sign_button.set_sensitive(is_doc_loaded and app.signature_rect is not None)
-
     def _build_and_set_menu(self, app):
-        """Builds the main application menu."""
         menu = Gio.Menu()
-        
         menu.append(app._("open_pdf"), "app.open")
-
+        
         recent_files_menu = Gio.Menu.new()
         recent_files = app.config.get_recent_files()
         if recent_files:
@@ -191,16 +229,10 @@ class AppWindow(Gtk.ApplicationWindow):
                 recent_files_menu.append(display_name, action_with_param)
             menu.append_submenu(app._("open_recent"), recent_files_menu)
 
-        sign_section = Gio.Menu()
-        sign_section.append(app._("sign_document"), "app.sign")
-        menu.append_section(None, sign_section)
-
-        # Settings section
         settings_section = Gio.Menu()
         settings_section.append(app._("select_certificate"), "app.select_cert")
         settings_section.append(app._("edit_stamp_templates"), "app.edit_stamps")
         
-        # Language submenu
         lang_submenu = Gio.Menu()
         lang_submenu.append("Idioma Español", "app.change_lang('es')")
         lang_submenu.append("English Language", "app.change_lang('en')")
@@ -208,7 +240,6 @@ class AppWindow(Gtk.ApplicationWindow):
         
         menu.append_section(None, settings_section)
 
-        # About section
         about_section = Gio.Menu()
         about_section.append(app._("about"), "app.about")
         menu.append_section(None, about_section)
@@ -242,8 +273,128 @@ class AppWindow(Gtk.ApplicationWindow):
             if abs(self.drawing_area.get_property("height-request") - int(target_h)) > 1:
                 self.drawing_area.set_size_request(-1, int(target_h))
 
+    def show_info_bar(self, text):
+        self.info_label.set_text(text)
+        self.info_bar.set_revealed(True)
+
+    def show_signature_panel(self):
+        self.update_signature_panel()
+        self.signature_panel.set_visible(True)
+
+    def hide_signature_panel(self):
+        self.signature_panel.set_visible(False)
+        self.drawing_area.queue_draw()
+
+    def update_signature_panel(self):
+        app = self.get_application()
+        
+        self.cert_combo.remove_all()
+        cert_details = app.cert_manager.get_all_certificate_details()
+        for i, cert in enumerate(cert_details):
+            self.cert_combo.append(cert['path'], cert['subject_cn'])
+            if cert['path'] == app.active_cert_path:
+                self.cert_combo.set_active(i)
+
+        self.template_combo.remove_all()
+        templates = app.config.get_signature_templates()
+        active_template_id = app.config.get_active_template_id()
+        for i, template in enumerate(templates):
+            self.template_combo.append(template['id'], template['name'])
+            if template['id'] == active_template_id:
+                self.template_combo.set_active(i)
+
+        self.stamp_preview.queue_draw()
+
+    def _on_panel_cert_changed(self, combo):
+        app = self.get_application()
+        path = combo.get_active_id()
+        if path and path != app.active_cert_path:
+            app.active_cert_path = path
+            self.stamp_preview.queue_draw()
+            self.drawing_area.queue_draw() 
+            
+    def _draw_stamp_preview(self, area, cr, width, h):
+        app = self.get_application()
+        if not app.active_cert_path: return
+        
+        cr.save()
+        cr.set_source_rgb(0.9, 0.9, 0.9)
+        cr.paint()
+        cr.rectangle(5, 5, width - 10, h - 10)
+        cr.set_source_rgb(1.0, 1.0, 1.0)
+        cr.fill()
+        
+        password = Secret.password_lookup_sync(KEYRING_SCHEMA, {"path": app.active_cert_path}, None)
+        if not password: return
+        _, certificate = app.cert_manager.get_credentials(app.active_cert_path, password)
+        if not certificate: return
+        
+        active_template_id = self.template_combo.get_active_id()
+        template_obj = app.config.get_template_by_id(active_template_id)
+        if not template_obj: return
+        
+        override_template = template_obj.get(f"template_{app.i18n.get_language()}", template_obj.get("template_en", ""))
+
+        layout = PangoCairo.create_layout(cr)
+        layout.set_width(Pango.units_from_double(width - 20))
+        layout.set_alignment(Pango.Alignment.CENTER)
+        markup_text = app.get_parsed_stamp_text(certificate, for_html=False, override_template=override_template)
+        layout.set_markup(markup_text, -1)
+        
+        ink_rect, logical_rect = layout.get_pixel_extents()
+        scale = min((width - 20) / logical_rect.width if logical_rect.width > 0 else 1, 
+                    (h - 10) / logical_rect.height if logical_rect.height > 0 else 1, 1.0)
+        
+        final_w, final_h = logical_rect.width * scale, logical_rect.height * scale
+        start_x, start_y = (width - final_w) / 2, (h - final_h) / 2
+        
+        cr.translate(start_x - (logical_rect.x * scale), start_y - (logical_rect.y * scale))
+        cr.scale(scale, scale)
+        cr.set_source_rgb(0, 0, 0)
+        PangoCairo.show_layout(cr, layout)
+        cr.restore()
+
+    def get_signature_rect_for_drawing(self):
+        app = self.get_application()
+        if not app.signature_rect or not app.page:
+            return None
+
+        drawing_width = self.drawing_area.get_width()
+        drawing_height = self.drawing_area.get_height()
+        
+        rel_x, rel_y, rel_w, rel_h = app.signature_rect
+        
+        abs_x = rel_x * drawing_width
+        abs_y = rel_y * drawing_height
+        abs_w = rel_w * drawing_width
+        abs_h = rel_h * drawing_height
+        
+        return Gdk.Rectangle(x=int(abs_x), y=int(abs_y), width=int(abs_w), height=int(abs_h))
+
+    def get_signature_rect_relative_to_page(self):
+        app = self.get_application()
+        if not app.signature_rect or not app.page: return None
+
+        # Convert drawing area relative coords to page relative coords
+        drawing_width = self.drawing_area.get_width()
+        drawing_height = self.drawing_area.get_height()
+        page_width = app.page.rect.width
+        page_height = app.page.rect.height
+
+        scale_w = page_width / drawing_width
+        scale_h = page_height / drawing_height
+        
+        rel_x, rel_y, rel_w, rel_h = app.signature_rect
+        
+        page_rel_x = (rel_x * drawing_width * scale_w) / page_width
+        page_rel_y = (rel_y * drawing_height * scale_h) / page_height
+        page_rel_w = (rel_w * drawing_width * scale_w) / page_width
+        page_rel_h = (rel_h * drawing_height * scale_h) / page_height
+
+        return (page_rel_x, page_rel_y, page_rel_w, page_rel_h)
+
+
     def _draw_page_and_rect(self, drawing_area, cr, width, height):
-        """The main draw function for the drawing area."""
         app = self.get_application()
         
         if app.page and width > 0:
@@ -255,10 +406,16 @@ class AppWindow(Gtk.ApplicationWindow):
             Gdk.cairo_set_source_pixbuf(cr, app.display_pixbuf, 0, 0)
             cr.paint()
         
-        rect_to_draw = app.signature_rect or ((min(app.start_x, app.end_x), min(app.start_y, app.end_y), abs(app.end_x - app.start_x), abs(app.end_y - app.start_y)) if app.start_x != -1 else None)
+        rect_to_draw = None
+        if app.signature_rect:
+             rect_to_draw = self.get_signature_rect_for_drawing()
+        elif app.start_x != -1:
+             rect_to_draw = Gdk.Rectangle(x=int(min(app.start_x, app.end_x)), y=int(min(app.start_y, app.end_y)),
+                                          width=int(abs(app.end_x-app.start_x)), height=int(abs(app.end_y-app.start_y)))
+        
         if not rect_to_draw: return
         
-        x, y, w, h = rect_to_draw
+        x, y, w, h = rect_to_draw.x, rect_to_draw.y, rect_to_draw.width, rect_to_draw.height
         
         cr.set_source_rgb(0.0, 0.5, 0.0)
         cr.set_line_width(1.5)
@@ -267,7 +424,7 @@ class AppWindow(Gtk.ApplicationWindow):
         cr.set_source_rgba(1.0, 1.0, 1.0, 0.8)
         cr.fill()
         
-        if w > 20 and h > 20 and app.active_cert_path:
+        if w > 20 and h > 20 and app.active_cert_path and app.signature_rect:
             password = Secret.password_lookup_sync(KEYRING_SCHEMA, {"path": app.active_cert_path}, None)
             if not password: return
             _, certificate = app.cert_manager.get_credentials(app.active_cert_path, password)
@@ -282,7 +439,6 @@ class AppWindow(Gtk.ApplicationWindow):
             markup_text = app.get_parsed_stamp_text(certificate, for_html=False)
             layout.set_markup(markup_text, -1)
 
-            # --- DYNAMIC SCALING LOGIC ---
             ink_rect, logical_rect = layout.get_pixel_extents()
             
             available_width = w - 10

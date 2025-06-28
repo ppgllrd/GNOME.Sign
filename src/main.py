@@ -1,7 +1,7 @@
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Secret", "1")
-from gi.repository import Gtk, Gio, Secret, GLib
+from gi.repository import Gtk, Gio, Secret, GLib, Gdk
 import fitz  # PyMuPDF
 import os
 import sys
@@ -27,8 +27,7 @@ from cryptography import x509
 class GnomeSign(Gtk.Application):
     """
     The main application class. It manages the application lifecycle,
-    state, and actions. It doesn't build the UI itself but delegates
-    that to the AppWindow class.
+    state, and actions.
     """
     def __init__(self):
         super().__init__(application_id="org.pepeg.GnomeSign", flags=Gio.ApplicationFlags.FLAGS_NONE)
@@ -50,12 +49,20 @@ class GnomeSign(Gtk.Application):
         self.i18n.set_language(self.config.get_language())
         self.cert_manager.set_cert_paths(self.config.get_cert_paths())
         self._build_actions()
+        self._set_initial_active_cert()
 
     def do_activate(self):
         self.window = AppWindow(application=self)
         self.window.present()
         self.update_ui()
         
+    def _set_initial_active_cert(self):
+        """Sets an initial active certificate if none is set."""
+        if not self.active_cert_path:
+            all_certs = self.cert_manager.get_all_certificate_details()
+            if all_certs:
+                self.active_cert_path = all_certs[0]['path']
+                
     def _build_actions(self):
         actions = [
             ("open", self.on_open_pdf_clicked),
@@ -71,7 +78,6 @@ class GnomeSign(Gtk.Application):
             action.connect("activate", callback)
             self.add_action(action)
             
-        # Stateful action for language change (radio buttons)
         lang_action = Gio.SimpleAction.new_stateful("change_lang", GLib.VariantType('s'), GLib.Variant('s', self.i18n.get_language()))
         lang_action.connect("change-state", self.on_lang_change_state)
         self.add_action(lang_action)
@@ -90,6 +96,7 @@ class GnomeSign(Gtk.Application):
             self.reset_signature_state()
             self.display_page(self.current_page)
             self.update_ui()
+            self.window.show_info_bar(self._("welcome_drag_prompt"))
         except Exception as e:
             show_message_dialog(self.window, self._("error"), self._("open_pdf_error").format(e), Gtk.MessageType.ERROR)
 
@@ -122,10 +129,6 @@ class GnomeSign(Gtk.Application):
             self.update_ui()
             
     def on_cert_button_clicked(self, action, param=None):
-        cert_details = self.cert_manager.get_all_certificate_details()
-        if not cert_details:
-             show_message_dialog(self.window, self._("select_certificate"), self._("no_certificate_selected"), Gtk.MessageType.INFO)
-             return
         create_cert_selector_dialog(self.window, self)
 
     def on_lang_change_state(self, action, value):
@@ -147,6 +150,7 @@ class GnomeSign(Gtk.Application):
         private_key, certificate = self.cert_manager.get_credentials(self.active_cert_path, password)
         if not (private_key and certificate):
             show_message_dialog(self.window, self._("error"), self._("credential_load_error"), Gtk.MessageType.ERROR); return
+        
         output_path = self.current_file_path.replace(".pdf", "-signed.pdf")     
         version = 1
         while os.path.exists(output_path):
@@ -154,17 +158,27 @@ class GnomeSign(Gtk.Application):
             output_path = f"{base}-{version}.pdf"
             version += 1
         shutil.copyfile(self.current_file_path, output_path)
+        
         try:
-            self._apply_visual_stamp(output_path, certificate)
-            signer = signers.SimpleSigner(translate_pyca_cryptography_cert_to_asn1(certificate), translate_pyca_cryptography_key_to_asn1(private_key), SimpleCertificateStore())
+            self._apply_visual_stamp_with_fitz(output_path, certificate)
+
+            signer = signers.SimpleSigner(
+                signing_cert=translate_pyca_cryptography_cert_to_asn1(certificate),
+                signing_key=translate_pyca_cryptography_key_to_asn1(private_key),
+                cert_registry=SimpleCertificateStore.from_certs([translate_pyca_cryptography_cert_to_asn1(certificate)])
+            )
+            
             signer_cn = certificate.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
             meta = PdfSignatureMetadata(field_name=f'Signature-{int(datetime.now().timestamp() * 1000)}', reason=self._("sign_reason"), name=signer_cn)
             pdf_signer = PdfSigner(meta, signer)
+
             with open(output_path, "rb+") as f:
-                writer = IncrementalPdfFileWriter(f)                
-                signed_bytes = pdf_signer.sign_pdf(writer)
-                f.seek(0); f.write(signed_bytes.getbuffer()); f.truncate()
+                writer = IncrementalPdfFileWriter(f)
+                pdf_signer.sign_pdf(writer)
+            
             self._ask_to_open_new_file(output_path)
+            self.reset_signature_state()
+
         except Exception as e:
             show_message_dialog(self.window, self._("sig_error_title"), self._("sig_error_message").format(e), Gtk.MessageType.ERROR)
             import traceback; traceback.print_exc()
@@ -194,7 +208,8 @@ class GnomeSign(Gtk.Application):
         self.signature_rect = None
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
         self.is_dragging_rect = False
-        if hasattr(self, 'window'): self.window.sign_button.set_sensitive(False)
+        if hasattr(self, 'window'):
+            self.window.hide_signature_panel()
 
     def display_page(self, page_num):
         is_doc_loaded = self.doc is not None
@@ -235,37 +250,69 @@ class GnomeSign(Gtk.Application):
 
     def on_drag_begin(self, gesture, start_x, start_y):
         if self.signature_rect:
-            x, y, w, h = self.signature_rect
-            if x <= start_x <= x + w and y <= start_y <= y + h:
+            rect_for_drawing = self.window.get_signature_rect_for_drawing()
+            if rect_for_drawing and (rect_for_drawing.x <= start_x <= rect_for_drawing.x + rect_for_drawing.width and 
+                rect_for_drawing.y <= start_y <= rect_for_drawing.y + rect_for_drawing.height):
                 self.is_dragging_rect = True
-                self.drag_offset_x, self.drag_offset_y = start_x - x, start_y - y
+                
+                drawing_width = self.window.drawing_area.get_width()
+                drawing_height = self.window.drawing_area.get_height()
+                self.drag_offset_x = start_x / drawing_width - self.signature_rect[0]
+                self.drag_offset_y = start_y / drawing_height - self.signature_rect[1]
                 return
+
         self.is_dragging_rect = False
         self.start_x, self.start_y = start_x, start_y
         self.end_x, self.end_y = start_x, start_y
         self.signature_rect = None
-        self.window.sign_button.set_sensitive(False)
+        if hasattr(self, 'window'):
+            self.window.hide_signature_panel()
         self.window.drawing_area.queue_draw()
+
 
     def on_drag_update(self, gesture, offset_x, offset_y):
         success, start_point_x, start_point_y = gesture.get_start_point()
         if not success: return
-        current_x, current_y = start_point_x + offset_x, start_point_y + offset_y
+        drawing_width = self.window.drawing_area.get_width()
+        drawing_height = self.window.drawing_area.get_height()
+        if drawing_width == 0 or drawing_height == 0: return
+
         if self.is_dragging_rect:
-            _, _, w, h = self.signature_rect
-            self.signature_rect = (current_x - self.drag_offset_x, current_y - self.drag_offset_y, w, h)
+            new_x_rel = ((start_point_x + offset_x) / drawing_width) - self.drag_offset_x
+            new_y_rel = ((start_point_y + offset_y) / drawing_height) - self.drag_offset_y
+            
+            self.signature_rect = (new_x_rel, new_y_rel, self.signature_rect[2], self.signature_rect[3])
         else:
-            self.end_x, self.end_y = current_x, current_y
-        if hasattr(self, 'window'): self.window.drawing_area.queue_draw()
+            self.end_x, self.end_y = start_point_x + offset_x, start_point_y + offset_y
+            
+        if hasattr(self, 'window'):
+            self.window.drawing_area.queue_draw()
 
     def on_drag_end(self, gesture, offset_x, offset_y):
-        if not self.is_dragging_rect:
-            x1 = min(self.start_x, self.end_x)
-            y1 = min(self.start_y, self.end_y)
-            self.signature_rect = (x1, y1, abs(self.start_x - self.end_x), abs(self.start_y - self.end_y))
-        self.is_dragging_rect = False
+        if self.is_dragging_rect:
+            self.is_dragging_rect = False
+            return
+            
+        if not self.cert_manager.get_all_certificate_details():
+            show_message_dialog(self.window, self._("select_certificate"), self._("no_certificate_selected"), Gtk.MessageType.INFO)
+            self.reset_signature_state()
+            self.window.drawing_area.queue_draw()
+            return
+            
+        x1, y1 = min(self.start_x, self.end_x), min(self.start_y, self.end_y)
+        x2, y2 = max(self.start_x, self.end_x), max(self.start_y, self.end_y)
+        
+        drawing_width = self.window.drawing_area.get_width()
+        drawing_height = self.window.drawing_area.get_height()
+        if drawing_width == 0 or drawing_height == 0: return
+
+        # Store coordinates relative to the drawing area size
+        self.signature_rect = (x1 / drawing_width, y1 / drawing_height, (x2 - x1) / drawing_width, (y2 - y1) / drawing_height)
+
+        self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
+
         if hasattr(self, 'window'):
-            self.window.update_header_bar_state(self)
+            self.window.show_signature_panel()
             self.window.drawing_area.queue_draw()
 
     def get_parsed_stamp_text(self, certificate, for_html=False, override_template=None):
@@ -304,13 +351,22 @@ class GnomeSign(Gtk.Application):
             
         return text
 
-    def _apply_visual_stamp(self, input_path, certificate):
+    def _apply_visual_stamp_with_fitz(self, input_path, certificate):
+        """Applies only the visual stamp using Fitz."""
         doc = fitz.open(input_path)
         page = doc.load_page(self.current_page)
-        view_width = self.window.drawing_area.get_width()
-        scale = page.rect.width / view_width if view_width > 0 else 1
-        x, y, w, h = self.signature_rect
-        fitz_rect = fitz.Rect(x * scale, y * scale, (x + w) * scale, (y + h) * scale)
+        
+        page_width = self.page.rect.width
+        page_height = self.page.rect.height
+        
+        rel_x, rel_y, rel_w, rel_h = self.window.get_signature_rect_relative_to_page()
+        
+        fitz_rect = fitz.Rect(
+            rel_x * page_width,
+            rel_y * page_height,
+            (rel_x + rel_w) * page_width,
+            (rel_y + rel_h) * page_height
+        )
 
         page.draw_rect(fitz_rect, color=None, fill=(1.0, 1.0, 1.0), fill_opacity=1.0, overlay=False)
         
@@ -326,7 +382,8 @@ class GnomeSign(Gtk.Application):
         html_rect = fitz_rect + (5, 5, -5, -5)
         page.insert_htmlbox(html_rect, html_content, rotate=0, css="b { font-size: 9pt; }")
 
-        doc.save(input_path, incremental=True, encryption=0); doc.close()
+        doc.save(doc.name, incremental=True, encryption=fitz.PDF_ENCRYPT_NONE)
+        doc.close()
 
     def _ask_to_open_new_file(self, file_path):
         def on_response(d, response_id):
@@ -346,6 +403,7 @@ class GnomeSign(Gtk.Application):
                     self.config.set_last_folder(os.path.dirname(pkcs12_path))
                     self.config.save()
                     self.cert_manager.add_cert_path(pkcs12_path)
+                    self._set_initial_active_cert()
                     show_message_dialog(self.window, self._("success"), self._("cert_load_success").format(common_name), Gtk.MessageType.INFO)
                     self.update_ui()
                 else:
@@ -354,6 +412,7 @@ class GnomeSign(Gtk.Application):
 
 def main():
     app = GnomeSign()
+    app.connect("open", lambda app, files, hint: app.open_file_path(files[0].get_path()))
     return app.run(sys.argv)
 
 if __name__ == "__main__":
