@@ -14,7 +14,7 @@ def create_about_dialog(parent, i18n_func):
     dialog.set_version("1.6")
     dialog.set_comments(i18n_func("sign_reason"))
     dialog.set_logo_icon_name("org.pepeg.GnomeSign") 
-    dialog.set_website("https://github.com/your-repo-here")
+    dialog.set_website("https://github.com/ppgllrd/GNOME.Sign")
     dialog.set_authors(["pepeg"])
     dialog.present()
 
