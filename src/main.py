@@ -62,7 +62,6 @@ class GnomeSign(Gtk.Application):
             ("sign", self.on_sign_document_clicked),
             ("load_cert", self.on_load_certificate_clicked),
             ("select_cert", self.on_cert_button_clicked),
-            ("change_lang", self.on_lang_button_clicked),
             ("about", lambda a, p: create_about_dialog(self.window, self._)),
             ("open_recent", self.on_open_recent_clicked, "s"),
             ("edit_stamps", self.on_edit_stamps_clicked),
@@ -71,6 +70,12 @@ class GnomeSign(Gtk.Application):
             action = Gio.SimpleAction.new(name, GLib.VariantType(param_type[0]) if param_type else None)
             action.connect("activate", callback)
             self.add_action(action)
+            
+        # Stateful action for language change (radio buttons)
+        lang_action = Gio.SimpleAction.new_stateful("change_lang", GLib.VariantType('s'), GLib.Variant('s', self.i18n.get_language()))
+        lang_action.connect("change-state", self.on_lang_change_state)
+        self.add_action(lang_action)
+
 
     def open_file_path(self, file_path):
         try:
@@ -123,9 +128,9 @@ class GnomeSign(Gtk.Application):
              return
         create_cert_selector_dialog(self.window, self)
 
-    def on_lang_button_clicked(self, action, param):
-        current_lang = self.i18n.get_language()
-        new_lang = "en" if current_lang == "es" else "es"
+    def on_lang_change_state(self, action, value):
+        new_lang = value.get_string()
+        action.set_state(value)
         self.i18n.set_language(new_lang)
         self.config.set_language(new_lang)
         self.update_ui()

@@ -129,6 +129,8 @@ class AppWindow(Gtk.ApplicationWindow):
         self.next_page_button.set_tooltip_text(app._("next_page"))
         self.page_entry_button.set_tooltip_text(app._("jump_to_page_title"))
         self.sign_button.set_tooltip_text(app._("sign_document"))
+        self.cert_button.set_tooltip_text(app._("select_certificate"))
+
 
     def update_cert_button_state(self, app):
         """Updates the state and tooltip of the certificate button."""
@@ -193,12 +195,20 @@ class AppWindow(Gtk.ApplicationWindow):
         sign_section.append(app._("sign_document"), "app.sign")
         menu.append_section(None, sign_section)
 
+        # Settings section
         settings_section = Gio.Menu()
         settings_section.append(app._("select_certificate"), "app.select_cert")
         settings_section.append(app._("edit_stamp_templates"), "app.edit_stamps")
-        settings_section.append(app._("change_language"), "app.change_lang")
+        
+        # Language submenu
+        lang_submenu = Gio.Menu()
+        lang_submenu.append("Idioma Español", "app.change_lang('es')")
+        lang_submenu.append("English Language", "app.change_lang('en')")
+        settings_section.append_submenu("Idioma / Language", lang_submenu)
+        
         menu.append_section(None, settings_section)
 
+        # About section
         about_section = Gio.Menu()
         about_section.append(app._("about"), "app.about")
         menu.append_section(None, about_section)
@@ -273,24 +283,20 @@ class AppWindow(Gtk.ApplicationWindow):
             layout.set_markup(markup_text, -1)
 
             # --- DYNAMIC SCALING LOGIC ---
-            # Measure the actual size of the rendered text
             ink_rect, logical_rect = layout.get_pixel_extents()
             
-            # Calculate scale factor to fit the text inside the box (with padding)
             available_width = w - 10
             available_height = h - 10
             scale_x = available_width / logical_rect.width if logical_rect.width > 0 else 1
             scale_y = available_height / logical_rect.height if logical_rect.height > 0 else 1
-            scale = min(scale_x, scale_y, 1.0) # Do not scale up, only down
+            scale = min(scale_x, scale_y, 1.0) 
             
-            # Calculate the final dimensions and position for centering
             final_width = logical_rect.width * scale
             final_height = logical_rect.height * scale
             
             final_x = x + (w - final_width) / 2
             final_y = y + (h - final_height) / 2
             
-            # Translate to the correct position and apply scale
             cr.translate(final_x - (logical_rect.x * scale), final_y - (logical_rect.y * scale))
             cr.scale(scale, scale)
 

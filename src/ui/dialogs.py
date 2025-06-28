@@ -15,7 +15,7 @@ def create_about_dialog(parent, i18n_func):
     dialog.set_comments(i18n_func("sign_reason"))
     dialog.set_logo_icon_name("org.pepeg.GnomeSign") 
     dialog.set_website("https://github.com/ppgllrd/GNOME.Sign")
-    dialog.set_authors(["Pepe Gallardo & Gemini"])
+    dialog.set_authors(["Pepe Gallardo", "Gemini"])
     dialog.present()
 
 def create_cert_selector_dialog(parent, app):
@@ -23,9 +23,9 @@ def create_cert_selector_dialog(parent, app):
     i18n_func = app._
     dialog = Gtk.Dialog(title=i18n_func("select_certificate"), transient_for=parent, modal=True)
     
-    # Add buttons to the action area
     dialog.add_button(i18n_func("cancel"), Gtk.ResponseType.CANCEL)
-    dialog.add_button(i18n_func("add_certificate"), Gtk.ResponseType.APPLY)
+    add_button = dialog.add_button(i18n_func("add_certificate"), Gtk.ResponseType.APPLY)
+    add_button.get_style_context().add_class("suggested-action")
     
     listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
     cert_details_list = app.cert_manager.get_all_certificate_details()
@@ -46,6 +46,7 @@ def create_cert_selector_dialog(parent, app):
             if app.active_cert_path == cert_path:
                 app.active_cert_path = None
             app.update_ui()
+
 
     for cert in cert_details_list:
         row = Gtk.ListBoxRow()
@@ -97,7 +98,6 @@ def create_cert_selector_dialog(parent, app):
     
     def on_dialog_response(d, response_id):
         if response_id == Gtk.ResponseType.APPLY:
-            # Trigger the "Load Certificate" action and close this dialog
             app.on_load_certificate_clicked(None, None)
         d.destroy()
 
