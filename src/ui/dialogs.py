@@ -6,6 +6,7 @@ import os
 import uuid
 import copy
 from certificate_manager import KEYRING_SCHEMA
+from datetime import datetime, timedelta, timezone
 
 def create_about_dialog(parent, i18n_func):
     """Creates and shows the About dialog."""
@@ -22,6 +23,7 @@ def create_cert_selector_dialog(parent, app):
     """Creates a dialog to select and manage certificates."""
     i18n_func = app._
     dialog = Gtk.Dialog(title=i18n_func("select_certificate"), transient_for=parent, modal=True)
+    dialog.set_default_size(550, 300) 
     
     dialog.add_button(i18n_func("cancel"), Gtk.ResponseType.CANCEL)
     add_button = dialog.add_button(i18n_func("add_certificate"), Gtk.ResponseType.APPLY)
@@ -47,7 +49,6 @@ def create_cert_selector_dialog(parent, app):
                 app.active_cert_path = None
             app.update_ui()
 
-
     for cert in cert_details_list:
         row = Gtk.ListBoxRow()
         row.cert_path = cert['path']
@@ -65,11 +66,22 @@ def create_cert_selector_dialog(parent, app):
         subject_label.set_markup(f"<b><big>{cert['subject_cn']}</big></b>")
         item_box.append(subject_label)
 
+        now = datetime.now(timezone.utc)
+        expires = cert['expires']
+        
+        if expires < now:
+            expiry_markup = f"<span color='red'><b>Expires:</b> {expires.strftime('%Y-%m-%d')} (Expired)</span>"
+        elif expires < (now + timedelta(days=30)):
+            expiry_markup = f"<span color='orange'><b>Expires:</b> {expires.strftime('%Y-%m-%d')}</span>"
+        else:
+            expiry_markup = f"<b>Expires:</b> {expires.strftime('%Y-%m-%d')}"
+
         details_label = Gtk.Label(xalign=0)
         details_label.set_wrap(True)
         details_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         details_text = (
-            f"<small><i>{i18n_func('issuer')}:</i> {cert['issuer_cn']}\n"
+            f"<small>{expiry_markup}\n"
+            f"<i>{i18n_func('issuer')}:</i> {cert['issuer_cn']}\n"
             f"<i>{i18n_func('serial')}:</i> {cert['serial']}\n"
             f"<i>{i18n_func('path')}:</i> {cert['path']}</small>"
         )
@@ -93,7 +105,8 @@ def create_cert_selector_dialog(parent, app):
 
     listbox.connect("row-activated", on_row_activated)
     
-    scrolled = Gtk.ScrolledWindow(hscrollbar_policy="never", vscrollbar_policy="automatic", min_content_height=200, max_content_height=400, child=listbox)
+    scrolled = Gtk.ScrolledWindow(hscrollbar_policy="never", vexpand=True, hexpand=True)
+    scrolled.set_child(listbox)
     dialog.get_content_area().append(scrolled)
     
     def on_dialog_response(d, response_id):

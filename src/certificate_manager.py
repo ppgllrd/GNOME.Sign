@@ -75,7 +75,8 @@ class CertificateManager:
                             "path": path,
                             "subject_cn": get_cn(cert.subject),
                             "issuer_cn": get_cn(cert.issuer),
-                            "serial": str(cert.serial_number)
+                            "serial": str(cert.serial_number),
+                            "expires": cert.not_valid_after_utc
                         }
                         details_list.append(details)
                     except Exception:
