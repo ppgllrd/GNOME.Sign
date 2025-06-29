@@ -1,4 +1,5 @@
 import gi
+gi.require_version("Secret", "1")
 gi.require_version("Gtk", "4.0")
 gi.require_version("PangoCairo", "1.0")
 from gi.repository import Gtk, Pango, PangoCairo, Gdk, Secret, GLib
@@ -17,6 +18,28 @@ def create_about_dialog(parent, i18n_func):
     dialog.set_logo_icon_name("org.pepeg.GnomeSign") 
     dialog.set_website("https://github.com/ppgllrd/GNOME.Sign")
     dialog.set_authors(["Pepe Gallardo", "Gemini"])
+    dialog.present()
+
+def create_cert_details_dialog(parent, i18n_func, cert_details):
+    """Shows a dialog with certificate details after successful loading."""
+    message = i18n_func("cert_load_success_details_message").format(
+        cert_details['subject_cn'],
+        cert_details['issuer_cn'],
+        cert_details['serial'],
+        cert_details['expires'].strftime('%Y-%m-%d %H:%M:%S UTC')
+    )
+    # ===== CORREGIDO =====
+    # La forma correcta en GTK4 es usar 'secondary_text' junto con 'secondary_use_markup=True'.
+    dialog = Gtk.MessageDialog(
+        transient_for=parent,
+        modal=True,
+        message_type=Gtk.MessageType.INFO,
+        buttons=Gtk.ButtonsType.OK,
+        text=i18n_func("cert_load_success_title"),
+        secondary_text=message,
+        secondary_use_markup=True
+    )
+    dialog.connect("response", lambda d, r: d.destroy())
     dialog.present()
 
 def create_cert_selector_dialog(parent, app):
@@ -111,8 +134,10 @@ def create_cert_selector_dialog(parent, app):
     
     def on_dialog_response(d, response_id):
         if response_id == Gtk.ResponseType.APPLY:
-            app.on_load_certificate_clicked(None, None)
-        d.destroy()
+            d.destroy() 
+            app.activate_action("load_cert")
+        else:
+            d.destroy()
 
     dialog.connect("response", on_dialog_response)
     dialog.show()
@@ -122,6 +147,10 @@ def create_password_dialog(parent, i18n_func, pkcs12_path, callback):
     dialog = Gtk.Dialog(title=i18n_func("password"), transient_for=parent, modal=True)
     dialog.add_buttons(i18n_func("cancel"), Gtk.ResponseType.CANCEL, i18n_func("accept"), Gtk.ResponseType.OK)
     
+    ok_button = dialog.get_widget_for_response(Gtk.ResponseType.OK)
+    ok_button.get_style_context().add_class("suggested-action")
+    dialog.set_default_widget(ok_button)
+
     content_area = dialog.get_content_area()
     content_area.set_spacing(10)
     content_area.set_margin_top(10)
@@ -133,6 +162,8 @@ def create_password_dialog(parent, i18n_func, pkcs12_path, callback):
     password_entry = Gtk.Entry(visibility=False, placeholder_text=i18n_func("password"))
     content_area.append(password_entry)
     
+    password_entry.connect("activate", lambda w: dialog.response(Gtk.ResponseType.OK))
+
     def on_response(d, response_id):
         password = None
         if response_id == Gtk.ResponseType.OK:
@@ -145,10 +176,18 @@ def create_password_dialog(parent, i18n_func, pkcs12_path, callback):
     
 def show_message_dialog(parent, title, message, message_type, buttons=Gtk.ButtonsType.OK):
     """
-    Displays a simple message dialog and returns the response synchronously.
-    This is a helper for simple confirmation dialogs.
+    Displays a simple message dialog and returns the response synchronously (GTK4 compatible).
     """
-    dialog = Gtk.MessageDialog(transient_for=parent, modal=True, message_type=message_type, buttons=buttons, text=title, secondary_text=message)
+    # ===== CORREGIDO =====
+    # La forma correcta en GTK4 es usar 'secondary_text'. No se usa markup aquí.
+    dialog = Gtk.MessageDialog(
+        transient_for=parent,
+        modal=True,
+        message_type=message_type,
+        buttons=buttons,
+        text=title,
+        secondary_text=message
+    )
     
     response_id = Gtk.ResponseType.NONE
     loop = GLib.MainLoop()
@@ -162,12 +201,22 @@ def show_message_dialog(parent, title, message, message_type, buttons=Gtk.Button
 
     dialog.connect("response", on_response)
     dialog.present()
-    loop.run()
+    
+    if dialog.is_visible():
+        loop.run()
 
     return response_id
 
-def create_jump_to_page_dialog(parent, i18n_func, current_page, max_page, callback):
+
+# ===== CORREGIDO =====
+# La función ahora toma el objeto 'app' para obtener los datos que necesita,
+# en lugar de recibir muchos parámetros.
+def create_jump_to_page_dialog(parent, app, callback):
     """Creates a dialog to jump to a specific page."""
+    i18n_func = app._
+    current_page = app.current_page + 1
+    max_page = len(app.doc)
+
     dialog = Gtk.Dialog(title=i18n_func("jump_to_page_title"), transient_for=parent, modal=True)
     dialog.add_buttons(i18n_func("cancel"), Gtk.ResponseType.CANCEL, i18n_func("accept"), Gtk.ResponseType.OK)
     
@@ -184,6 +233,8 @@ def create_jump_to_page_dialog(parent, i18n_func, current_page, max_page, callba
     spin_button = Gtk.SpinButton(adjustment=adjustment, numeric=True)
     content_area.append(spin_button)
     
+    dialog.set_default_widget(spin_button)
+
     def on_response(d, response_id):
         page_num = None
         if response_id == Gtk.ResponseType.OK:
@@ -197,8 +248,10 @@ def create_jump_to_page_dialog(parent, i18n_func, current_page, max_page, callba
 def create_stamp_editor_dialog(parent, app, config):
     """Creates the signature stamp template editor dialog."""
     i18n_func = app._
+    # ===== CORREGIDO =====
+    # Usar la clave de internacionalización para el botón de cerrar.
     dialog = Gtk.Dialog(title=i18n_func("edit_stamp_templates"), transient_for=parent, modal=True, width_request=700, height_request=600)
-    dialog.add_button("_Close", Gtk.ResponseType.CLOSE)
+    dialog.add_button(i18n_func("close_button"), Gtk.ResponseType.CLOSE)
     
     main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12, margin_top=12, margin_bottom=12, margin_start=12, margin_end=12)
     dialog.get_content_area().append(main_box)
@@ -232,18 +285,61 @@ def create_stamp_editor_dialog(parent, app, config):
     name_entry = Gtk.Entry()
     right_pane.append(name_entry)
 
+    # --- State for tracking focus and other things ---
+    state = {
+        "current_id": None, "block_combo_changed": False, "dirty": False, 
+        "loaded_cert": None, "last_focused_view": None
+    }
+    
+    text_es_view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR)
+    text_en_view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR)
+    state["last_focused_view"] = text_es_view # Default to Spanish view
+
+    # ===== CORREGIDO =====
+    # Lógica para que los botones del editor de plantillas funcionen.
+    def apply_tag_to_selection(button, tag):
+        view = state.get("last_focused_view")
+        if not view: return
+        
+        buffer = view.get_buffer()
+        bounds = buffer.get_selection_bounds()
+        if bounds: # Check if there is a selection
+            start, end = bounds
+            text = buffer.get_text(start, end, True)
+            buffer.delete(start, end)
+            buffer.insert(start, f"<{tag}>{text}</{tag}>")
+    
+    def on_view_focus(controller, event):
+        # Use a focus controller to reliably get the widget
+        state["last_focused_view"] = controller.get_widget()
+
+    focus_controller_es = Gtk.EventControllerFocus()
+    focus_controller_es.connect("enter", on_view_focus)
+    text_es_view.add_controller(focus_controller_es)
+    
+    focus_controller_en = Gtk.EventControllerFocus()
+    focus_controller_en.connect("enter", on_view_focus)
+    text_en_view.add_controller(focus_controller_en)
+
+    toolbar = Gtk.Box(spacing=6)
+    bold_btn = Gtk.Button.new_with_label(i18n_func("bold"))
+    italic_btn = Gtk.Button.new_with_label(i18n_func("italic"))
+    bold_btn.connect("clicked", apply_tag_to_selection, "b")
+    italic_btn.connect("clicked", apply_tag_to_selection, "i")
+    toolbar.append(bold_btn)
+    toolbar.append(italic_btn)
+
     text_box_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, vexpand=False)
     right_pane.append(text_box_container)
 
     text_box_container.append(Gtk.Label(label=f"<b>{i18n_func('template_es')}</b>", use_markup=True, xalign=0))
-    text_es_view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR)
     scrolled_es = Gtk.ScrolledWindow(child=text_es_view, hscrollbar_policy="never", min_content_height=80)
     text_box_container.append(scrolled_es)
 
     text_box_container.append(Gtk.Label(label=f"<b>{i18n_func('template_en')}</b>", use_markup=True, xalign=0))
-    text_en_view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR)
     scrolled_en = Gtk.ScrolledWindow(child=text_en_view, hscrollbar_policy="never", min_content_height=80)
     text_box_container.append(scrolled_en)
+    text_box_container.append(toolbar)
     
     preview_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, vexpand=True, hexpand=True)
     right_pane.append(preview_container)
@@ -252,8 +348,6 @@ def create_stamp_editor_dialog(parent, app, config):
     preview_area.get_style_context().add_class("view")
     preview_container.append(preview_area)
     
-    state = {"current_id": None, "block_combo_changed": False, "dirty": False, "loaded_cert": None}
-
     if app.active_cert_path:
         password = Secret.password_lookup_sync(KEYRING_SCHEMA, {"path": app.active_cert_path}, None)
         if password:
@@ -362,7 +456,7 @@ def create_stamp_editor_dialog(parent, app, config):
         if state["block_combo_changed"]: return
         if state["dirty"]:
             res = show_message_dialog(dialog, i18n_func("unsaved_changes_title"), i18n_func("unsaved_changes_message"), Gtk.MessageType.QUESTION, Gtk.ButtonsType.YES_NO)
-            if res == Gtk.ResponseType.NO:
+            if res != Gtk.ResponseType.YES:
                 state["block_combo_changed"] = True
                 for i, t in enumerate(config.get_signature_templates()):
                     if t['id'] == state["current_id"]:
@@ -426,14 +520,12 @@ def create_stamp_editor_dialog(parent, app, config):
         should_close = True
         if state["dirty"] and (response_id == Gtk.ResponseType.CLOSE or response_id == Gtk.ResponseType.DELETE_EVENT):
             res = show_message_dialog(d, i18n_func("unsaved_changes_title"), i18n_func("confirm_close_message"), Gtk.MessageType.QUESTION, Gtk.ButtonsType.YES_NO)
-            if res == Gtk.ResponseType.NO:
+            if res != Gtk.ResponseType.YES:
                 should_close = False
         
         if should_close:
             d.destroy()
-        else:
-            d.stop_emission_by_name("response")
-
+        
     dialog.connect("response", on_dialog_response)
 
     load_templates_to_combo()

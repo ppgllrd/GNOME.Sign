@@ -16,7 +16,8 @@ from config_manager import ConfigManager
 from ui.app_window import AppWindow
 from ui.dialogs import (create_about_dialog, create_cert_selector_dialog, 
                         create_password_dialog, show_message_dialog,
-                        create_jump_to_page_dialog, create_stamp_editor_dialog)
+                        create_jump_to_page_dialog, create_stamp_editor_dialog,
+                        create_cert_details_dialog)
 
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign import signers
@@ -99,8 +100,11 @@ class GnomeSign(Adw.Application):
                 file = dialog.get_file()
                 if file:
                     self.open_file_path(file.get_path())
+            dialog.destroy()
+
+        file_chooser = Gtk.FileChooserDialog(title=self._("open_pdf_dialog_title"), parent=self.window, action=Gtk.FileChooserAction.OPEN)
+        file_chooser.add_buttons(self._("cancel"), Gtk.ResponseType.CANCEL, self._("open"), Gtk.ResponseType.ACCEPT)
         
-        file_chooser = Gtk.FileChooserNative.new(self._("open_pdf_dialog_title"), self.window, Gtk.FileChooserAction.OPEN, self._("open"), self._("cancel"))
         filter_pdf = Gtk.FileFilter(); filter_pdf.set_name(self._("pdf_files")); filter_pdf.add_mime_type("application/pdf")
         file_chooser.add_filter(filter_pdf)
         
@@ -130,10 +134,12 @@ class GnomeSign(Adw.Application):
 
     def on_lang_change_state(self, action, value):
         new_lang = value.get_string()
-        action.set_state(value)
-        self.i18n.set_language(new_lang)
-        self.config.set_language(new_lang)
-        self.update_ui()
+        # Prevent re-triggering if the state is already set
+        if action.get_state().get_string() != new_lang:
+            action.set_state(value)
+            self.i18n.set_language(new_lang)
+            self.config.set_language(new_lang)
+            self.update_ui()
         
     def on_edit_stamps_clicked(self, action, param):
         create_stamp_editor_dialog(self.window, self, self.config)
@@ -175,8 +181,11 @@ class GnomeSign(Adw.Application):
                 file = dialog.get_file()
                 if file:
                     self._process_certificate_selection(file.get_path())
+            dialog.destroy()
         
-        file_chooser = Gtk.FileChooserNative.new(self._("open_cert_dialog_title"), self.window, Gtk.FileChooserAction.OPEN, self._("open"), self._("cancel"))
+        file_chooser = Gtk.FileChooserDialog(title=self._("open_cert_dialog_title"), parent=self.window, action=Gtk.FileChooserAction.OPEN)
+        file_chooser.add_buttons(self._("cancel"), Gtk.ResponseType.CANCEL, self._("open"), Gtk.ResponseType.ACCEPT)
+        
         filter_p12 = Gtk.FileFilter(); filter_p12.set_name(self._("p12_files")); filter_p12.add_pattern("*.p12"); filter_p12.add_pattern("*.pfx")
         file_chooser.add_filter(filter_p12)
 
@@ -194,7 +203,10 @@ class GnomeSign(Adw.Application):
         self.signature_rect = None
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
         self.is_dragging_rect = False
-        if hasattr(self, 'window'): self.window.sign_button.set_sensitive(False)
+        if hasattr(self, 'window'): 
+            self.window.sign_button.set_sensitive(False)
+            self.window.update_tooltips(self)
+
 
     def display_page(self, page_num):
         is_doc_loaded = self.doc is not None
@@ -231,7 +243,9 @@ class GnomeSign(Adw.Application):
                 self.reset_signature_state()
                 self.display_page(self.current_page)
                 self.update_ui()
-        create_jump_to_page_dialog(self.window, self._, self.current_page + 1, len(self.doc), on_page_selected)
+        # ===== CORREGIDO =====
+        # La llamada a la función ahora pasa el objeto 'self' (la app)
+        create_jump_to_page_dialog(self.window, self, on_page_selected)
 
     def on_drag_begin(self, gesture, start_x, start_y):
         if self.signature_rect:
@@ -244,7 +258,8 @@ class GnomeSign(Adw.Application):
         self.start_x, self.start_y = start_x, start_y
         self.end_x, self.end_y = start_x, start_y
         self.signature_rect = None
-        self.window.sign_button.set_sensitive(False)
+        self.window.update_header_bar_state(self)
+        self.window.update_tooltips(self)
         self.window.drawing_area.queue_draw()
 
     def on_drag_update(self, gesture, offset_x, offset_y):
@@ -262,10 +277,17 @@ class GnomeSign(Adw.Application):
         if not self.is_dragging_rect:
             x1 = min(self.start_x, self.end_x)
             y1 = min(self.start_y, self.end_y)
-            self.signature_rect = (x1, y1, abs(self.start_x - self.end_x), abs(self.start_y - self.end_y))
+            width = abs(self.start_x - self.end_x)
+            height = abs(self.start_y - self.end_y)
+            if width > 5 and height > 5: # Threshold to avoid tiny accidental rects
+                 self.signature_rect = (x1, y1, width, height)
+            else:
+                self.signature_rect = None
+
         self.is_dragging_rect = False
         if hasattr(self, 'window'):
             self.window.update_header_bar_state(self)
+            self.window.update_tooltips(self)
             self.window.drawing_area.queue_draw()
 
     def get_parsed_stamp_text(self, certificate, for_html=False, override_template=None):
@@ -329,13 +351,14 @@ class GnomeSign(Adw.Application):
         doc.save(input_path, incremental=True, encryption=0); doc.close()
 
     def _ask_to_open_new_file(self, file_path):
-        def on_response(d, response_id):
-            if response_id == Gtk.ResponseType.YES:
-                self.open_file_path(file_path)
-            d.destroy()
-        dialog = Gtk.MessageDialog(transient_for=self.window, modal=True, message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.YES_NO, text=self._("sign_success_title"), secondary_text=self._("sign_success_message").format(file_path))
-        dialog.connect("response", on_response); dialog.present()
-    
+        response = show_message_dialog(
+            self.window, self._("sign_success_title"),
+            self._("sign_success_message").format(file_path),
+            Gtk.MessageType.QUESTION, Gtk.ButtonsType.YES_NO
+        )
+        if response == Gtk.ResponseType.YES:
+            self.open_file_path(file_path)
+
     def _process_certificate_selection(self, pkcs12_path):
         def on_password_response(password):
             if password is not None:
@@ -346,7 +369,12 @@ class GnomeSign(Adw.Application):
                     self.config.set_last_folder(os.path.dirname(pkcs12_path))
                     self.config.save()
                     self.cert_manager.add_cert_path(pkcs12_path)
-                    show_message_dialog(self.window, self._("success"), self._("cert_load_success").format(common_name), Gtk.MessageType.INFO)
+                    
+                    # Refresh details and show the success dialog
+                    cert_details = next((c for c in self.cert_manager.get_all_certificate_details() if c['path'] == pkcs12_path), None)
+                    if cert_details:
+                        create_cert_details_dialog(self.window, self._, cert_details)
+
                     self.update_ui()
                 else:
                     show_message_dialog(self.window, self._("error"), self._("bad_password_or_file"), Gtk.MessageType.ERROR)

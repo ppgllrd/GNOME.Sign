@@ -1,5 +1,8 @@
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography import x509
+# Añadimos la importación de gi y la especificación de versión
+import gi
+gi.require_version('Secret', '1')
 from gi.repository import Secret
 
 # The schema for storing passwords in the GNOME Keyring.

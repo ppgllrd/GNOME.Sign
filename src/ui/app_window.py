@@ -78,16 +78,13 @@ class AppWindow(Adw.ApplicationWindow):
         welcome_icon = Gtk.Image.new_from_icon_name("org.pepeg.GnomeSign")
         welcome_icon.set_pixel_size(128)
         self.welcome_label = Gtk.Label()
-        self.welcome_label.set_markup(f"<span size='large'>{app._('welcome_prompt')}</span>")
-        self.welcome_button = Gtk.Button.new_with_label(app._("welcome_button"))
+        self.welcome_button = Gtk.Button.new()
         self.welcome_button.get_style_context().add_class("suggested-action")
         welcome_box.append(welcome_icon)
         welcome_box.append(self.welcome_label)
         welcome_box.append(self.welcome_button)
         self.stack.add_named(welcome_box, "welcome_view")
         
-        self.welcome_button.connect("clicked", lambda w: self.get_application().activate_action("open"))
-
         self._connect_signals()
 
     def _connect_signals(self):
@@ -113,9 +110,22 @@ class AppWindow(Adw.ApplicationWindow):
     def update_ui(self, app):
         """Updates all UI elements to reflect the application's state."""
         self.title_widget.set_title(app._('window_title'))
-        self.welcome_label.set_markup(f"<span size='large'>{app._('welcome_prompt')}</span>")
-        self.welcome_button.set_label(app._("welcome_button"))
         
+        # --- Lógica de la pantalla de bienvenida ---
+        certs_exist = bool(app.cert_manager.get_all_certificate_details())
+        if certs_exist:
+            self.welcome_label.set_markup(f"<span size='large'>{app._('welcome_prompt_cert_ok')}</span>")
+            self.welcome_button.set_label(app._("welcome_button"))
+            if hasattr(self.welcome_button, "handler_id") and self.welcome_button.handler_id:
+                self.welcome_button.disconnect(self.welcome_button.handler_id)
+            self.welcome_button.handler_id = self.welcome_button.connect("clicked", lambda w: app.activate_action("open"))
+        else:
+            self.welcome_label.set_markup(f"<span size='large'>{app._('welcome_prompt_no_cert')}</span>")
+            self.welcome_button.set_label(app._("welcome_button_no_cert"))
+            if hasattr(self.welcome_button, "handler_id") and self.welcome_button.handler_id:
+                self.welcome_button.disconnect(self.welcome_button.handler_id)
+            self.welcome_button.handler_id = self.welcome_button.connect("clicked", lambda w: app.activate_action("load_cert"))
+
         self.update_tooltips(app)
         self.update_cert_button_state(app)
         self.update_header_bar_state(app)
@@ -128,9 +138,12 @@ class AppWindow(Adw.ApplicationWindow):
         self.prev_page_button.set_tooltip_text(app._("prev_page"))
         self.next_page_button.set_tooltip_text(app._("next_page"))
         self.page_entry_button.set_tooltip_text(app._("jump_to_page_title"))
-        self.sign_button.set_tooltip_text(app._("sign_document"))
         self.cert_button.set_tooltip_text(app._("select_certificate"))
-
+        
+        if app.signature_rect:
+            self.sign_button.set_tooltip_text(app._("sign_button_tooltip_sign"))
+        else:
+            self.sign_button.set_tooltip_text(app._("sign_button_tooltip_select_area"))
 
     def update_cert_button_state(self, app):
         """Updates the state and tooltip of the certificate button."""
@@ -197,13 +210,13 @@ class AppWindow(Adw.ApplicationWindow):
         settings_section = Gio.Menu()
         settings_section.append(app._("select_certificate"), "app.select_cert")
         settings_section.append(app._("edit_stamp_templates"), "app.edit_stamps")
-        
-        lang_submenu = Gio.Menu()
-        lang_submenu.append("Idioma Español", "app.change_lang('es')")
-        lang_submenu.append("English Language", "app.change_lang('en')")
-        settings_section.append_submenu("Idioma / Language", lang_submenu)
-        
         menu.append_section(None, settings_section)
+
+        # Language Radio Buttons Section
+        lang_section = Gio.Menu()
+        lang_section.append("Idioma Español", "app.change_lang::es")
+        lang_section.append("English Language", "app.change_lang::en")
+        menu.append_section(None, lang_section)
 
         about_section = Gio.Menu()
         about_section.append(app._("about"), "app.about")
