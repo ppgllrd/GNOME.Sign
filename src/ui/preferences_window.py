@@ -26,7 +26,6 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.page_general.add(lang_group)
         model = Gtk.StringList.new(["Español", "English"])
         
-        # --- SOLUCIÓN: Crear el ComboRow y LUEGO asignar el modelo ---
         self.lang_row = Adw.ComboRow.new()
         self.lang_row.set_model(model)
         
@@ -38,6 +37,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.certs_group = None
 
     def update_all_texts(self):
+        """SOLUCIÓN DEFINITIVA: Actualiza todos los textos de esta ventana."""
         self.set_title(self.app._("preferences"))
         self.page_general.set_title(self.app._("general"))
         self.page_general.set_icon_name("preferences-system-symbolic")
@@ -94,13 +94,10 @@ class PreferencesWindow(Adw.PreferencesWindow):
         filters.append(filter_p12); dialog.set_filters(filters); dialog.open(self, None, self._on_add_cert_finish)
 
     def _on_add_cert_finish(self, dialog, result):
-        # --- SOLUCIÓN: Indentación correcta ---
         try: 
             file = dialog.open_finish(result)
-            if file: 
-                self._process_certificate_selection(file.get_path())
-        except GLib.Error: 
-            pass
+            if file: self._process_certificate_selection(file.get_path())
+        except GLib.Error: pass
             
     def _on_delete_cert_clicked(self, button, path):
         confirm_dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.YES_NO, text=self.app._("confirm_delete_cert_title"), secondary_text=self.app._("confirm_delete_cert_message"))
