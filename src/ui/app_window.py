@@ -53,25 +53,21 @@ class AppWindow(Adw.ApplicationWindow):
         self.cert_button = Gtk.Button.new_from_icon_name("dialog-password-symbolic")
         self.header_bar.pack_end(self.cert_button)
         
-        # Main Content Box
         main_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         main_content.append(self.header_bar)
 
-        # --- Main Content Stack ---
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.SLIDE_UP_DOWN)
         main_content.append(self.stack)
         
         self.set_content(main_content)
 
-        # PDF View
         self.drawing_area = Gtk.DrawingArea(hexpand=True, vexpand=True)
         self.scrolled_window = Gtk.ScrolledWindow()
         self.scrolled_window.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.scrolled_window.set_child(self.drawing_area)
         self.stack.add_named(self.scrolled_window, "pdf_view")
         
-        # Welcome View
         welcome_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12,
                               valign=Gtk.Align.CENTER, halign=Gtk.Align.CENTER,
                               hexpand=True, vexpand=True)
@@ -111,7 +107,6 @@ class AppWindow(Adw.ApplicationWindow):
         """Updates all UI elements to reflect the application's state."""
         self.title_widget.set_title(app._('window_title'))
         
-        # --- Lógica de la pantalla de bienvenida ---
         certs_exist = bool(app.cert_manager.get_all_certificate_details())
         if certs_exist:
             self.welcome_label.set_markup(f"<span size='large'>{app._('welcome_prompt_cert_ok')}</span>")
@@ -212,7 +207,6 @@ class AppWindow(Adw.ApplicationWindow):
         settings_section.append(app._("edit_stamp_templates"), "app.edit_stamps")
         menu.append_section(None, settings_section)
 
-        # Language Radio Buttons Section
         lang_section = Gio.Menu()
         lang_section.append("Idioma Español", "app.change_lang::es")
         lang_section.append("English Language", "app.change_lang::en")
@@ -288,7 +282,7 @@ class AppWindow(Adw.ApplicationWindow):
             layout.set_width(Pango.units_from_double(w - 10))
             layout.set_alignment(Pango.Alignment.CENTER)
             
-            markup_text = app.get_parsed_stamp_text(certificate, for_html=False)
+            markup_text = app.get_parsed_stamp_text(certificate)
             layout.set_markup(markup_text, -1)
 
             ink_rect, logical_rect = layout.get_pixel_extents()

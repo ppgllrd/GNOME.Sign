@@ -30,7 +30,10 @@ class I18NManager:
                 "sign_button_tooltip_sign": "Firmar el documento",
                 "cert_load_success_title": "Certificado Añadido con Éxito",
                 "cert_load_success_details_message": "Se ha añadido y guardado la contraseña para:\n\n<b>Sujeto:</b> {}\n<b>Emisor:</b> {}\n<b>Nº Serie:</b> {}\n<b>Caduca:</b> {}",
-                "bold": "Negrita", "italic": "Cursiva", "close_button": "_Cerrar"
+                "bold": "Negrita", "italic": "Cursiva", "close_button": "_Cerrar",
+                "bold_tooltip": "Aplicar/quitar negrita", "italic_tooltip": "Aplicar/quitar cursiva", "font_tooltip": "Cambiar familia de fuente", "size_tooltip": "Cambiar tamaño de fuente", "color_tooltip": "Cambiar color de fuente",
+                "size_small": "Pequeño", "size_normal": "Normal", "size_large": "Grande", "size_huge": "Enorme",
+                "size": "Tamaño", "font": "Fuente", "color": "Color"
             },
             "en": {
                 "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
@@ -60,7 +63,10 @@ class I18NManager:
                 "sign_button_tooltip_sign": "Sign the document",
                 "cert_load_success_title": "Certificate Added Successfully",
                 "cert_load_success_details_message": "The password has been added and saved for:\n\n<b>Subject:</b> {}\n<b>Issuer:</b> {}\n<b>Serial:</b> {}\n<b>Expires:</b> {}",
-                "bold": "Bold", "italic": "Italic", "close_button": "_Close"
+                "bold": "Bold", "italic": "Italic", "close_button": "_Close",
+                "bold_tooltip": "Toggle bold", "italic_tooltip": "Toggle italic", "font_tooltip": "Change font family", "size_tooltip": "Change font size", "color_tooltip": "Change font color",
+                "size_small": "Small", "size_normal": "Normal", "size_large": "Large", "size_huge": "Huge",
+                "size": "Size", "font": "Font", "color": "Color"
             }
         }
 

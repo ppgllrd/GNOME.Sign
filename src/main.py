@@ -2,13 +2,14 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1") 
 gi.require_version("Secret", "1")
-from gi.repository import Gtk, Adw, Gio, Secret, GLib 
+from gi.repository import Gtk, Adw, Gio, Secret, GLib, Pango
 import fitz
 import os
 import sys
 import shutil
 import re
 from datetime import datetime
+from html.parser import HTMLParser
 
 from i18n import I18NManager
 from certificate_manager import CertificateManager, KEYRING_SCHEMA
@@ -26,12 +27,57 @@ from pyhanko.keys.internal import translate_pyca_cryptography_key_to_asn1, trans
 from pyhanko_certvalidator.registry import SimpleCertificateStore
 from cryptography import x509
 
+class PangoToHtmlConverter(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.html_parts = []
+        self.style_stack = [{}]
+
+    def get_current_styles(self):
+        return self.style_stack[-1]
+
+    def handle_starttag(self, tag, attrs):
+        new_styles = self.get_current_styles().copy()
+        attrs_dict = dict(attrs)
+        
+        if tag == 'b':
+            new_styles['font-weight'] = 'bold'
+        elif tag == 'i':
+            new_styles['font-style'] = 'italic'
+        elif tag == 'span':
+            if 'font_family' in attrs_dict:
+                new_styles['font-family'] = f"'{attrs_dict['font_family']}'"
+            if 'color' in attrs_dict:
+                new_styles['color'] = attrs_dict['color']
+            if 'size' in attrs_dict:
+                try:
+                    css_size = int(attrs_dict['size']) / Pango.SCALE
+                    new_styles['font-size'] = f'{css_size:.1f}pt'
+                except (ValueError, TypeError):
+                    pass
+        
+        self.style_stack.append(new_styles)
+
+    def handle_endtag(self, tag):
+        if len(self.style_stack) > 1:
+            self.style_stack.pop()
+
+    def handle_data(self, data):
+        if not data: return
+        
+        styles = self.get_current_styles()
+        style_str = "; ".join(f"{k}: {v}" for k, v in styles.items() if v)
+        escaped_data = GLib.markup_escape_text(data)
+        
+        if style_str:
+            self.html_parts.append(f'<span style="{style_str}">{escaped_data}</span>')
+        else:
+            self.html_parts.append(escaped_data)
+
+    def get_html(self):
+        return "".join(self.html_parts)
+
 class GnomeSign(Adw.Application):
-    """
-    The main application class. It manages the application lifecycle,
-    state, and actions. It doesn't build the UI itself but delegates
-    that to the AppWindow class.
-    """
     def __init__(self):
         super().__init__(application_id="org.pepeg.GnomeSign", flags=Gio.ApplicationFlags.FLAGS_NONE)
         self.config = ConfigManager()
@@ -134,7 +180,6 @@ class GnomeSign(Adw.Application):
 
     def on_lang_change_state(self, action, value):
         new_lang = value.get_string()
-        # Prevent re-triggering if the state is already set
         if action.get_state().get_string() != new_lang:
             action.set_state(value)
             self.i18n.set_language(new_lang)
@@ -243,8 +288,6 @@ class GnomeSign(Adw.Application):
                 self.reset_signature_state()
                 self.display_page(self.current_page)
                 self.update_ui()
-        # ===== CORREGIDO =====
-        # La llamada a la función ahora pasa el objeto 'self' (la app)
         create_jump_to_page_dialog(self.window, self, on_page_selected)
 
     def on_drag_begin(self, gesture, start_x, start_y):
@@ -279,7 +322,7 @@ class GnomeSign(Adw.Application):
             y1 = min(self.start_y, self.end_y)
             width = abs(self.start_x - self.end_x)
             height = abs(self.start_y - self.end_y)
-            if width > 5 and height > 5: # Threshold to avoid tiny accidental rects
+            if width > 5 and height > 5:
                  self.signature_rect = (x1, y1, width, height)
             else:
                 self.signature_rect = None
@@ -290,20 +333,17 @@ class GnomeSign(Adw.Application):
             self.window.update_tooltips(self)
             self.window.drawing_area.queue_draw()
 
-    def get_parsed_stamp_text(self, certificate, for_html=False, override_template=None):
+    def get_parsed_stamp_text(self, certificate, override_template=None):
         if override_template is not None:
             template = override_template
         else:
             template_obj = self.config.get_active_template()
-            if not template_obj:
-                return "Error: No active signature template found."
+            if not template_obj: return "Error: No active signature template found."
             template = template_obj.get(f"template_{self.i18n.get_language()}", template_obj.get("template_en", ""))
         
         def get_cn(name):
-            try:
-                return name.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
-            except (IndexError, AttributeError):
-                return name.rfc4514_string()
+            try: return name.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
+            except (IndexError, AttributeError): return name.rfc4514_string()
 
         subject_cn = get_cn(certificate.subject)
         issuer_cn = get_cn(certificate.issuer)
@@ -320,9 +360,6 @@ class GnomeSign(Adw.Application):
             py_format = py_format.replace("HH", "%H").replace("mm", "%M").replace("ss", "%S")
             formatted_date = datetime.now().strftime(py_format)
             text = text.replace(date_match.group(0), formatted_date)
-        
-        if for_html:
-            text = text.replace("\n", "<br>")
             
         return text
 
@@ -334,19 +371,21 @@ class GnomeSign(Adw.Application):
         x, y, w, h = self.signature_rect
         fitz_rect = fitz.Rect(x * scale, y * scale, (x + w) * scale, (y + h) * scale)
 
-        page.draw_rect(fitz_rect, color=None, fill=(1.0, 1.0, 1.0), fill_opacity=1.0, overlay=False)
+        parsed_pango_text = self.get_parsed_stamp_text(certificate)
         
-        parsed_text_for_html = self.get_parsed_stamp_text(certificate, for_html=True)
-
+        converter = PangoToHtmlConverter()
+        converter.feed(parsed_pango_text.replace('&', '&').replace('\n', '<br/>'))
+        parsed_html_text = converter.get_html()
+        
         html_content = f"""
-        <div style="width: 100%; height: 100%; display: table; text-align: center;">
-            <div style="display: table-cell; vertical-align: middle; font-family: sans-serif; font-size: 8pt; line-height: 1.2;">
-                {parsed_text_for_html}
+        <div style="width: 100%; height: 100%; display: table; text-align: center; line-height: 1.2;">
+            <div style="display: table-cell; vertical-align: middle;">
+                {parsed_html_text}
             </div>
         </div>
         """
         html_rect = fitz_rect + (5, 5, -5, -5)
-        page.insert_htmlbox(html_rect, html_content, rotate=0, css="b { font-size: 9pt; }")
+        page.insert_htmlbox(html_rect, html_content, rotate=0)
 
         doc.save(input_path, incremental=True, encryption=0); doc.close()
 
@@ -370,7 +409,6 @@ class GnomeSign(Adw.Application):
                     self.config.save()
                     self.cert_manager.add_cert_path(pkcs12_path)
                     
-                    # Refresh details and show the success dialog
                     cert_details = next((c for c in self.cert_manager.get_all_certificate_details() if c['path'] == pkcs12_path), None)
                     if cert_details:
                         create_cert_details_dialog(self.window, self._, cert_details)
