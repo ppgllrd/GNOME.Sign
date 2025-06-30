@@ -1,426 +1,308 @@
+# main.py
+
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1") 
 gi.require_version("Secret", "1")
+
 from gi.repository import Gtk, Adw, Gio, Secret, GLib, Pango
-import fitz
-import os
-import sys
-import shutil
-import re
+import fitz, os, sys, shutil, re, hashlib
 from datetime import datetime
 from html.parser import HTMLParser
 
 from i18n import I18NManager
 from certificate_manager import CertificateManager, KEYRING_SCHEMA
 from config_manager import ConfigManager
-from ui.app_window import AppWindow
-from ui.dialogs import (create_about_dialog, create_cert_selector_dialog, 
-                        create_password_dialog, show_message_dialog,
-                        create_jump_to_page_dialog, create_stamp_editor_dialog,
-                        create_cert_details_dialog)
 
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign import signers
 from pyhanko.sign.signers.pdf_signer import PdfSigner, PdfSignatureMetadata
-from pyhanko.keys.internal import translate_pyca_cryptography_key_to_asn1, translate_pyca_cryptography_cert_to_asn1
-from pyhanko_certvalidator.registry import SimpleCertificateStore
 from cryptography import x509
 
 class PangoToHtmlConverter(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.html_parts = []
-        self.style_stack = [{}]
-
-    def get_current_styles(self):
-        return self.style_stack[-1]
-
+    def __init__(self): super().__init__(); self.html_parts = []; self.style_stack = [{}]
+    def get_current_styles(self): return self.style_stack[-1]
     def handle_starttag(self, tag, attrs):
-        new_styles = self.get_current_styles().copy()
-        attrs_dict = dict(attrs)
-        
-        if tag == 'b':
-            new_styles['font-weight'] = 'bold'
-        elif tag == 'i':
-            new_styles['font-style'] = 'italic'
+        new_styles = self.get_current_styles().copy(); attrs_dict = dict(attrs)
+        if tag == 'b': new_styles['font-weight'] = 'bold'
+        elif tag == 'i': new_styles['font-style'] = 'italic'
         elif tag == 'span':
-            if 'font_family' in attrs_dict:
-                new_styles['font-family'] = f"'{attrs_dict['font_family']}'"
-            if 'color' in attrs_dict:
-                new_styles['color'] = attrs_dict['color']
+            if 'font_family' in attrs_dict: new_styles['font-family'] = f"'{attrs_dict['font_family']}'"
+            if 'color' in attrs_dict: new_styles['color'] = attrs_dict['color']
             if 'size' in attrs_dict:
-                try:
-                    css_size = int(attrs_dict['size']) / Pango.SCALE
-                    new_styles['font-size'] = f'{css_size:.1f}pt'
-                except (ValueError, TypeError):
-                    pass
-        
+                css_size = 12 
+                pango_size = attrs_dict['size']
+                if pango_size == "small": css_size = 9
+                elif pango_size == "medium": css_size = 12
+                elif pango_size == "large": css_size = 16
+                elif pango_size == "x-large": css_size = 20
+                else:
+                    try: css_size = int(pango_size) / Pango.SCALE
+                    except (ValueError, TypeError): pass
+                new_styles['font-size'] = f'{css_size:.1f}pt'
         self.style_stack.append(new_styles)
-
     def handle_endtag(self, tag):
-        if len(self.style_stack) > 1:
-            self.style_stack.pop()
-
+        if len(self.style_stack) > 1: self.style_stack.pop()
     def handle_data(self, data):
         if not data: return
-        
-        styles = self.get_current_styles()
-        style_str = "; ".join(f"{k}: {v}" for k, v in styles.items() if v)
+        styles = self.get_current_styles(); style_str = "; ".join(f"{k}: {v}" for k, v in styles.items() if v)
         escaped_data = GLib.markup_escape_text(data)
-        
-        if style_str:
-            self.html_parts.append(f'<span style="{style_str}">{escaped_data}</span>')
-        else:
-            self.html_parts.append(escaped_data)
-
-    def get_html(self):
-        return "".join(self.html_parts)
+        if style_str: self.html_parts.append(f'<span style="{style_str}">{escaped_data}</span>')
+        else: self.html_parts.append(escaped_data)
+    def get_html(self): return "".join(self.html_parts).replace('\n', '<br/>')
 
 class GnomeSign(Adw.Application):
     def __init__(self):
-        super().__init__(application_id="org.pepeg.GnomeSign", flags=Gio.ApplicationFlags.FLAGS_NONE)
+        super().__init__(application_id="org.pepeg.GnomeSign", flags=Gio.ApplicationFlags.HANDLES_OPEN)
         self.config = ConfigManager()
         self.i18n = I18NManager()
         self.cert_manager = CertificateManager()
-        self.doc, self.current_page, self.active_cert_path = None, 0, None
+        self.doc, self.current_page = None, 0
         self.page, self.display_pixbuf, self.current_file_path = None, None, None
         self.signature_rect, self.is_dragging_rect = None, False
-        self.drag_offset_x, self.drag_offset_y = 0, 0
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
+        self.window, self.stamp_editor_window, self.preferences_window = None, None, None
 
-    def _(self, key):
-        return self.i18n._(key)
+    def _(self, key): return self.i18n._(key)
 
     def do_startup(self):
         Adw.Application.do_startup(self)
         self.config.load()
         self.i18n.set_language(self.config.get_language())
         self.cert_manager.set_cert_paths(self.config.get_cert_paths())
+        self._ensure_active_certificate()
         self._build_actions()
-
-    def do_activate(self):
+        from ui.app_window import AppWindow
         self.window = AppWindow(application=self)
-        self.window.present()
-        self.update_ui()
         
-    def _build_actions(self):
-        actions = [
-            ("open", self.on_open_pdf_clicked),
-            ("sign", self.on_sign_document_clicked),
-            ("load_cert", self.on_load_certificate_clicked),
-            ("select_cert", self.on_cert_button_clicked),
-            ("about", lambda a, p: create_about_dialog(self.window, self._)),
-            ("open_recent", self.on_open_recent_clicked, "s"),
-            ("edit_stamps", self.on_edit_stamps_clicked),
-        ]
-        for name, callback, *param_type in actions:
-            action = Gio.SimpleAction.new(name, GLib.VariantType(param_type[0]) if param_type else None)
-            action.connect("activate", callback)
-            self.add_action(action)
-            
-        lang_action = Gio.SimpleAction.new_stateful("change_lang", GLib.VariantType('s'), GLib.Variant('s', self.i18n.get_language()))
-        lang_action.connect("change-state", self.on_lang_change_state)
-        self.add_action(lang_action)
+    def do_activate(self):
+        self.window.present()
 
+    def do_open(self, files, n_files, hint):
+        if n_files > 0:
+            file_path = files[0].get_path()
+            if file_path and file_path.lower().endswith('.pdf'): self.open_file_path(file_path)
+        self.do_activate()
+
+    def _ensure_active_certificate(self):
+        cert_paths = self.config.get_cert_paths()
+        if not cert_paths: self.active_cert_path = None; return
+        stored_path = self.config.config_data.get('active_cert_path')
+        if stored_path and stored_path in cert_paths: self.active_cert_path = stored_path
+        else: self.active_cert_path = cert_paths[0] if cert_paths else None; self.config.config_data['active_cert_path'] = self.active_cert_path; self.config.save()
+
+    def set_active_certificate(self, path):
+        self.active_cert_path = path; self.config.config_data['active_cert_path'] = path; self.config.save(); self.update_ui()
+
+    def _build_actions(self):
+        simple_actions = [("open", self.on_open_pdf_clicked), ("sign", self.on_sign_document_clicked), ("preferences", self.on_preferences_clicked), ("about", self.on_about_clicked), ("edit_stamps", self.on_edit_stamps_clicked)]
+        for name, callback in simple_actions:
+            if not self.lookup_action(name): action = Gio.SimpleAction.new(name, None); action.connect("activate", callback); self.add_action(action)
+        if not self.lookup_action("change_lang"):
+            action = Gio.SimpleAction.new_stateful("change_lang", GLib.VariantType('s'), GLib.Variant('s', self.i18n.get_language())); action.connect("change-state", self.on_lang_change_state); self.add_action(action)
 
     def open_file_path(self, file_path):
         try:
+            if not os.path.exists(file_path): raise FileNotFoundError(f"File not found: {file_path}")
             if self.doc: self.doc.close()
-            self.current_file_path = file_path
-            self.doc = fitz.open(file_path)
-            self.current_page = 0
-            self.config.add_recent_file(file_path)
-            folder_path = os.path.dirname(file_path)
-            self.config.set_last_folder(folder_path)
-            self.config.save()
+            self.current_file_path = file_path; self.doc = fitz.open(file_path); self.current_page = 0
+            self.config.add_recent_file(file_path); self.config.set_last_folder(os.path.dirname(file_path)); self.config.save()
             self.reset_signature_state()
+            self.window.sidebar.populate(self.doc)
             self.display_page(self.current_page)
             self.update_ui()
         except Exception as e:
-            show_message_dialog(self.window, self._("error"), self._("open_pdf_error").format(e), Gtk.MessageType.ERROR)
+            if self.window: self.window.show_toast(self._("open_pdf_error").format(e))
+            self.doc = None; self.update_ui()
 
     def on_open_pdf_clicked(self, action, param):
-        def on_response(dialog, response):
-            if response == Gtk.ResponseType.ACCEPT:
-                file = dialog.get_file()
-                if file:
-                    self.open_file_path(file.get_path())
-            dialog.destroy()
+        dialog = Gtk.FileDialog.new(); dialog.set_title(self._("open_pdf_dialog_title"))
+        filters = Gio.ListStore.new(Gtk.FileFilter); filter_pdf = Gtk.FileFilter.new()
+        filter_pdf.set_name(self._("pdf_files")); filter_pdf.add_mime_type("application/pdf")
+        filters.append(filter_pdf); dialog.set_filters(filters); dialog.set_default_filter(filter_pdf)
+        dialog.open(self.window, None, self._on_open_pdf_finish)
 
-        file_chooser = Gtk.FileChooserDialog(title=self._("open_pdf_dialog_title"), parent=self.window, action=Gtk.FileChooserAction.OPEN)
-        file_chooser.add_buttons(self._("cancel"), Gtk.ResponseType.CANCEL, self._("open"), Gtk.ResponseType.ACCEPT)
-        
-        filter_pdf = Gtk.FileFilter(); filter_pdf.set_name(self._("pdf_files")); filter_pdf.add_mime_type("application/pdf")
-        file_chooser.add_filter(filter_pdf)
-        
-        last_folder = self.config.get_last_folder()
-        if os.path.isdir(last_folder):
-            file_chooser.set_current_folder(Gio.File.new_for_path(last_folder))
-            
-        file_chooser.connect("response", on_response)
-        file_chooser.show()
+    def _on_open_pdf_finish(self, dialog, result):
+        try: 
+            file = dialog.open_finish(result);
+            if file: self.open_file_path(file.get_path())
+        except GLib.Error: pass
 
-    def on_open_recent_clicked(self, action, param):
-        file_path = param.get_string()
-        if os.path.exists(file_path):
-            self.open_file_path(file_path)
+    def on_open_recent_clicked_action(self, file_path):
+        if os.path.exists(file_path): self.open_file_path(file_path)
         else:
-            show_message_dialog(self.window, self._("error"), f"File not found:\n{file_path}", Gtk.MessageType.ERROR)
-            self.config.remove_recent_file(file_path)
-            self.config.save()
-            self.update_ui()
-            
-    def on_cert_button_clicked(self, action, param=None):
-        cert_details = self.cert_manager.get_all_certificate_details()
-        if not cert_details:
-             show_message_dialog(self.window, self._("select_certificate"), self._("no_certificate_selected"), Gtk.MessageType.INFO)
-             return
-        create_cert_selector_dialog(self.window, self)
+            if self.window: self.window.show_toast(f"File not found: {file_path}")
+            self.config.remove_recent_file(file_path); self.config.save(); self.update_ui()
+
+    def on_preferences_clicked(self, action, param):
+        if not self.preferences_window:
+            from ui.preferences_window import PreferencesWindow
+            self.preferences_window = PreferencesWindow(application=self)
+        self.preferences_window.present()
+
+    def on_edit_stamps_clicked(self, action, param):
+        if not self.stamp_editor_window:
+            from ui.stamp_editor_window import StampEditorWindow
+            self.stamp_editor_window = StampEditorWindow(application=self)
+        self.stamp_editor_window.present()
 
     def on_lang_change_state(self, action, value):
         new_lang = value.get_string()
-        if action.get_state().get_string() != new_lang:
+        if self.i18n.get_language() != new_lang:
             action.set_state(value)
             self.i18n.set_language(new_lang)
-            self.config.set_language(new_lang)
-            self.update_ui()
-        
-    def on_edit_stamps_clicked(self, action, param):
-        create_stamp_editor_dialog(self.window, self, self.config)
-
-    def on_sign_document_clicked(self, action=None, param=None):
-        if not all([self.doc, self.signature_rect, self.current_file_path, self.active_cert_path]):
-            show_message_dialog(self.window, self._("error"), self._("need_pdf_and_area"), Gtk.MessageType.ERROR); return
-        password = Secret.password_lookup_sync(KEYRING_SCHEMA, {"path": self.active_cert_path}, None)
-        if not password:
-            show_message_dialog(self.window, self._("error"), self._("credential_load_error"), Gtk.MessageType.ERROR); return
-        private_key, certificate = self.cert_manager.get_credentials(self.active_cert_path, password)
-        if not (private_key and certificate):
-            show_message_dialog(self.window, self._("error"), self._("credential_load_error"), Gtk.MessageType.ERROR); return
-        output_path = self.current_file_path.replace(".pdf", "-signed.pdf")     
-        version = 1
-        while os.path.exists(output_path):
-            base = os.path.splitext(self.current_file_path)[0] + "-signed"
-            output_path = f"{base}-{version}.pdf"
-            version += 1
-        shutil.copyfile(self.current_file_path, output_path)
-        try:
-            self._apply_visual_stamp(output_path, certificate)
-            signer = signers.SimpleSigner(translate_pyca_cryptography_cert_to_asn1(certificate), translate_pyca_cryptography_key_to_asn1(private_key), SimpleCertificateStore())
-            signer_cn = certificate.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
-            meta = PdfSignatureMetadata(field_name=f'Signature-{int(datetime.now().timestamp() * 1000)}', reason=self._("sign_reason"), name=signer_cn)
-            pdf_signer = PdfSigner(meta, signer)
-            with open(output_path, "rb+") as f:
-                writer = IncrementalPdfFileWriter(f)                
-                signed_bytes = pdf_signer.sign_pdf(writer)
-                f.seek(0); f.write(signed_bytes.getbuffer()); f.truncate()
-            self._ask_to_open_new_file(output_path)
-        except Exception as e:
-            show_message_dialog(self.window, self._("sig_error_title"), self._("sig_error_message").format(e), Gtk.MessageType.ERROR)
-            import traceback; traceback.print_exc()
-
-    def on_load_certificate_clicked(self, action, param):
-        def on_response(dialog, response):
-            if response == Gtk.ResponseType.ACCEPT:
-                file = dialog.get_file()
-                if file:
-                    self._process_certificate_selection(file.get_path())
-            dialog.destroy()
-        
-        file_chooser = Gtk.FileChooserDialog(title=self._("open_cert_dialog_title"), parent=self.window, action=Gtk.FileChooserAction.OPEN)
-        file_chooser.add_buttons(self._("cancel"), Gtk.ResponseType.CANCEL, self._("open"), Gtk.ResponseType.ACCEPT)
-        
-        filter_p12 = Gtk.FileFilter(); filter_p12.set_name(self._("p12_files")); filter_p12.add_pattern("*.p12"); filter_p12.add_pattern("*.pfx")
-        file_chooser.add_filter(filter_p12)
-
-        last_folder = self.config.get_last_folder()
-        if os.path.isdir(last_folder):
-            file_chooser.set_current_folder(Gio.File.new_for_path(last_folder))
-            
-        file_chooser.connect("response", on_response)
-        file_chooser.show()
-
-    def update_ui(self):
-        if hasattr(self, 'window'): self.window.update_ui(self)
-
-    def reset_signature_state(self):
-        self.signature_rect = None
-        self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
-        self.is_dragging_rect = False
-        if hasattr(self, 'window'): 
-            self.window.sign_button.set_sensitive(False)
-            self.window.update_tooltips(self)
-
-
-    def display_page(self, page_num):
-        is_doc_loaded = self.doc is not None
-        if is_doc_loaded and 0 <= page_num < len(self.doc):
-            self.page = self.doc.load_page(page_num)
-            self.display_pixbuf = None
-        else:
-            self.page, self.doc, self.current_file_path, self.display_pixbuf = None, None, None, None
-        
-        if hasattr(self, 'window'):
-            self.window.update_header_bar_state(self)
-            self.window.drawing_area.queue_draw()
-            GLib.idle_add(self.window.adjust_scroll_and_viewport)
-
-    def on_prev_page_clicked(self, button):
-        if self.doc and self.current_page > 0:
-            self.current_page -= 1
-            self.reset_signature_state()
-            self.display_page(self.current_page)
+            self.config.set_language(new_lang) 
             self.update_ui()
     
+    def update_ui(self):
+        """SOLUCIÓN DEFINITIVA: Orquesta la actualización de textos en TODAS las ventanas."""
+        if self.window: self.window.update_all_texts()
+        if self.preferences_window: self.preferences_window.update_all_texts()
+        if self.stamp_editor_window: self.stamp_editor_window.update_all_texts()
+
+    def on_about_clicked(self, action, param):
+        dialog = Adw.AboutWindow(transient_for=self.window, application_name="GnomeSign", application_icon="org.pepeg.GnomeSign", version="1.0", developer_name="Pepe Gallardo", website="https://github.com/ppgllrd/GNOME.Sign", comments=self._("sign_reason"))
+        dialog.present()
+        
+    def reset_signature_state(self):
+        self.signature_rect = None; self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
+        self.is_dragging_rect = False;
+        if self.window: self.window.sign_button.set_sensitive(False)
+
+    def display_page(self, page_num):
+        if not self.doc or not (0 <= page_num < len(self.doc)): self.page, self.doc, self.current_file_path, self.display_pixbuf = None, None, None, None; return
+        self.current_page = page_num; self.page = self.doc.load_page(page_num); self.display_pixbuf = None
+        if self.window:
+            self.window.update_header_bar_state(self); self.window.drawing_area.queue_draw()
+            GLib.idle_add(self.window.adjust_scroll_and_viewport); self.window.sidebar.select_page(page_num)
+    
+    def on_prev_page_clicked(self, button):
+        if self.doc and self.current_page > 0: self.reset_signature_state(); self.display_page(self.current_page - 1)
+    
     def on_next_page_clicked(self, button):
-        if self.doc and self.current_page < len(self.doc) - 1:
-            self.current_page += 1
-            self.reset_signature_state()
-            self.display_page(self.current_page)
-            self.update_ui()
+        if self.doc and self.current_page < len(self.doc) - 1: self.reset_signature_state(); self.display_page(self.current_page + 1)
             
     def on_jump_to_page_clicked(self, button):
         if not self.doc: return
-        def on_page_selected(page_num):
-            if page_num is not None:
-                self.current_page = page_num
-                self.reset_signature_state()
-                self.display_page(self.current_page)
-                self.update_ui()
-        create_jump_to_page_dialog(self.window, self, on_page_selected)
+        dialog = Gtk.Dialog(title=self._("jump_to_page_title"), transient_for=self.window, modal=True)
+        dialog.add_buttons(self._("cancel"), Gtk.ResponseType.CANCEL, self._("accept"), Gtk.ResponseType.OK)
+        content_area = dialog.get_content_area(); content_area.set_spacing(10); content_area.set_margin_top(10); content_area.set_margin_bottom(10); content_area.set_margin_start(10); content_area.set_margin_end(10)
+        content_area.append(Gtk.Label(label=self._("jump_to_page_prompt").format(len(self.doc))))
+        adj = Gtk.Adjustment(value=self.current_page + 1, lower=1, upper=len(self.doc), step_increment=1)
+        spin = Gtk.SpinButton(adjustment=adj, numeric=True); content_area.append(spin)
+        dialog.set_default_widget(spin); spin.connect("activate", lambda w: dialog.response(Gtk.ResponseType.OK))
+        def on_response(d, res):
+            if res == Gtk.ResponseType.OK: self.reset_signature_state(); self.display_page(spin.get_value_as_int() - 1)
+            d.destroy()
+        dialog.connect("response", on_response); dialog.present()
 
     def on_drag_begin(self, gesture, start_x, start_y):
         if self.signature_rect:
             x, y, w, h = self.signature_rect
-            if x <= start_x <= x + w and y <= start_y <= y + h:
-                self.is_dragging_rect = True
-                self.drag_offset_x, self.drag_offset_y = start_x - x, start_y - y
-                return
-        self.is_dragging_rect = False
-        self.start_x, self.start_y = start_x, start_y
-        self.end_x, self.end_y = start_x, start_y
-        self.signature_rect = None
-        self.window.update_header_bar_state(self)
-        self.window.update_tooltips(self)
-        self.window.drawing_area.queue_draw()
+            if x <= start_x <= x + w and y <= start_y <= y + h: self.is_dragging_rect, self.drag_offset_x, self.drag_offset_y = True, start_x - x, start_y - y; return
+        self.is_dragging_rect, self.start_x, self.start_y = False, start_x, start_y
+        self.end_x, self.end_y = start_x, start_y; self.signature_rect = None
+        self.window.update_header_bar_state(self); self.window.drawing_area.queue_draw()
+        if not self.has_shown_drag_infobar: self.has_shown_drag_infobar = True; self.window.update_info_bar(self)
 
     def on_drag_update(self, gesture, offset_x, offset_y):
         success, start_point_x, start_point_y = gesture.get_start_point()
         if not success: return
         current_x, current_y = start_point_x + offset_x, start_point_y + offset_y
-        if self.is_dragging_rect:
-            _, _, w, h = self.signature_rect
-            self.signature_rect = (current_x - self.drag_offset_x, current_y - self.drag_offset_y, w, h)
-        else:
-            self.end_x, self.end_y = current_x, current_y
-        if hasattr(self, 'window'): self.window.drawing_area.queue_draw()
+        if self.is_dragging_rect: _, _, w, h = self.signature_rect; self.signature_rect = (current_x - self.drag_offset_x, current_y - self.drag_offset_y, w, h)
+        else: self.end_x, self.end_y = current_x, current_y
+        if self.window: self.window.drawing_area.queue_draw()
 
     def on_drag_end(self, gesture, offset_x, offset_y):
         if not self.is_dragging_rect:
-            x1 = min(self.start_x, self.end_x)
-            y1 = min(self.start_y, self.end_y)
-            width = abs(self.start_x - self.end_x)
-            height = abs(self.start_y - self.end_y)
-            if width > 5 and height > 5:
-                 self.signature_rect = (x1, y1, width, height)
-            else:
-                self.signature_rect = None
-
+            x1, y1 = min(self.start_x, self.end_x), min(self.start_y, self.end_y)
+            width, height = abs(self.start_x - self.end_x), abs(self.start_y - self.end_y)
+            self.signature_rect = (x1, y1, width, height) if width > 10 and height > 10 else None
         self.is_dragging_rect = False
-        if hasattr(self, 'window'):
-            self.window.update_header_bar_state(self)
-            self.window.update_tooltips(self)
-            self.window.drawing_area.queue_draw()
+        if self.window: self.window.update_header_bar_state(self); self.window.drawing_area.queue_draw()
+    
+    def on_sign_document_clicked(self, action=None, param=None):
+        if not self.doc or not self.current_file_path: return
+        if not self.signature_rect:
+            if self.window: self.window.show_toast(self._("need_pdf_and_area")); return
+        if not self.active_cert_path:
+            if self.window: self.window.show_toast(self._("no_cert_selected_error")); return
+        
+        password = Secret.password_lookup_sync(KEYRING_SCHEMA, {"path": self.active_cert_path}, None)
+        if not password:
+            if self.window: self.window.show_toast(self._("credential_load_error")); return
+        
+        private_key, certificate = self.cert_manager.get_credentials(self.active_cert_path, password)
+        if not (private_key and certificate):
+            if self.window: self.window.show_toast(self._("credential_load_error")); return
+        
+        output_path = self.current_file_path.replace(".pdf", "-signed.pdf")
+        version = 1
+        while os.path.exists(output_path):
+            output_path = f"{os.path.splitext(self.current_file_path)[0]}-signed-{version}.pdf"; version += 1
+        
+        shutil.copyfile(self.current_file_path, output_path)
+        try:
+            self._apply_visual_stamp(output_path, certificate)
+
+            signer = signers.SimpleSigner(private_key, certificate, ca_chain_certs=())
+            
+            signer_cn_attrs = certificate.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)
+            signer_cn = signer_cn_attrs[0].value if signer_cn_attrs else "Unknown Signer"
+
+            meta = PdfSignatureMetadata(field_name=f'Signature-{int(datetime.now().timestamp() * 1000)}', reason=self._("sign_reason"), name=signer_cn)
+            pdf_signer = PdfSigner(meta, signer)
+            with open(output_path, "rb+") as f:
+                writer = IncrementalPdfFileWriter(f)                
+                pdf_signer.sign_pdf(writer, output=f)
+            
+            if self.window:
+                toast_message = self._("sign_success_message").format(os.path.basename(output_path))
+                self.window.show_toast(toast_message, self._("open"), lambda: self.open_file_path(output_path))
+            
+        except Exception as e:
+            if self.window: self.window.show_toast(self._("sig_error_message").format(e))
+            import traceback; traceback.print_exc()
 
     def get_parsed_stamp_text(self, certificate, override_template=None):
-        if override_template is not None:
-            template = override_template
+        if override_template is not None: template = override_template
         else:
             template_obj = self.config.get_active_template()
             if not template_obj: return "Error: No active signature template found."
             template = template_obj.get(f"template_{self.i18n.get_language()}", template_obj.get("template_en", ""))
-        
         def get_cn(name):
             try: return name.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
             except (IndexError, AttributeError): return name.rfc4514_string()
-
-        subject_cn = get_cn(certificate.subject)
-        issuer_cn = get_cn(certificate.issuer)
-        cert_serial = str(certificate.serial_number)
-        
-        text = template.replace("$$SUBJECTCN$$", subject_cn)
-        text = text.replace("$$ISSUERCN$$", issuer_cn)
-        text = text.replace("$$CERTSERIAL$$", cert_serial)
-
+        text = template.replace("$$SUBJECTCN$$", GLib.markup_escape_text(get_cn(certificate.subject)))
+        text = text.replace("$$ISSUERCN$$", GLib.markup_escape_text(get_cn(certificate.issuer)))
+        text = text.replace("$$CERTSERIAL$$", str(certificate.serial_number))
         date_match = re.search(r'\$\$SIGNDATE=(.*?)\$\$', text)
         if date_match:
-            format_pattern = date_match.group(1)
-            py_format = format_pattern.replace("dd", "%d").replace("MM", "%m").replace("yyyy", "%Y").replace("yy", "%y")
-            py_format = py_format.replace("HH", "%H").replace("mm", "%M").replace("ss", "%S")
-            formatted_date = datetime.now().strftime(py_format)
-            text = text.replace(date_match.group(0), formatted_date)
-            
+            format_pattern = date_match.group(1).replace("dd", "%d").replace("MM", "%m").replace("yyyy", "%Y").replace("yy", "%y").replace("HH", "%H").replace("mm", "%M").replace("ss", "%S")
+            text = text.replace(date_match.group(0), datetime.now().strftime(format_pattern))
         return text
 
     def _apply_visual_stamp(self, input_path, certificate):
-        doc = fitz.open(input_path)
-        page = doc.load_page(self.current_page)
+        doc = fitz.open(input_path); page = doc.load_page(self.current_page)
         view_width = self.window.drawing_area.get_width()
         scale = page.rect.width / view_width if view_width > 0 else 1
         x, y, w, h = self.signature_rect
         fitz_rect = fitz.Rect(x * scale, y * scale, (x + w) * scale, (y + h) * scale)
-
         parsed_pango_text = self.get_parsed_stamp_text(certificate)
-        
-        converter = PangoToHtmlConverter()
-        converter.feed(parsed_pango_text.replace('&', '&').replace('\n', '<br/>'))
-        parsed_html_text = converter.get_html()
-        
+        converter = PangoToHtmlConverter(); converter.feed(parsed_pango_text)
         html_content = f"""
-        <div style="width: 100%; height: 100%; display: table; text-align: center; line-height: 1.2;">
-            <div style="display: table-cell; vertical-align: middle;">
-                {parsed_html_text}
+        <div style="width:100%; height:100%; display:table; text-align:center; line-height:1.2; font-family: sans-serif; font-size: 10pt;">
+            <div style="display:table-cell; vertical-align:middle;">
+                {converter.get_html()}
             </div>
         </div>
         """
-        html_rect = fitz_rect + (5, 5, -5, -5)
-        page.insert_htmlbox(html_rect, html_content, rotate=0)
-
+        css = """ div { box-sizing: border-box; } """
+        page.insert_htmlbox(fitz_rect + (5, 5, -5, -5), html_content, css=css, rotate=0)
         doc.save(input_path, incremental=True, encryption=0); doc.close()
 
-    def _ask_to_open_new_file(self, file_path):
-        response = show_message_dialog(
-            self.window, self._("sign_success_title"),
-            self._("sign_success_message").format(file_path),
-            Gtk.MessageType.QUESTION, Gtk.ButtonsType.YES_NO
-        )
-        if response == Gtk.ResponseType.YES:
-            self.open_file_path(file_path)
-
-    def _process_certificate_selection(self, pkcs12_path):
-        def on_password_response(password):
-            if password is not None:
-                common_name = self.cert_manager.test_certificate(pkcs12_path, password)
-                if common_name:
-                    Secret.password_store_sync(KEYRING_SCHEMA, {"path": pkcs12_path}, Secret.COLLECTION_DEFAULT, f"Certificate password for {common_name}", password, None)
-                    self.config.add_cert_path(pkcs12_path)
-                    self.config.set_last_folder(os.path.dirname(pkcs12_path))
-                    self.config.save()
-                    self.cert_manager.add_cert_path(pkcs12_path)
-                    
-                    cert_details = next((c for c in self.cert_manager.get_all_certificate_details() if c['path'] == pkcs12_path), None)
-                    if cert_details:
-                        create_cert_details_dialog(self.window, self._, cert_details)
-
-                    self.update_ui()
-                else:
-                    show_message_dialog(self.window, self._("error"), self._("bad_password_or_file"), Gtk.MessageType.ERROR)
-        create_password_dialog(self.window, self._, pkcs12_path, on_password_response)
-
-def main():
-    app = GnomeSign()
-    return app.run(sys.argv)
-
 if __name__ == "__main__":
-    main()
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    app = GnomeSign()
+    sys.exit(app.run(sys.argv))
