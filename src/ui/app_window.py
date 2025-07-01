@@ -18,6 +18,7 @@ class AppWindow(Adw.ApplicationWindow):
         self.header_bar = Adw.HeaderBar(); self.main_box.append(self.header_bar)
         self.flap = Adw.Flap(); self.main_box.append(self.flap)
         self.sidebar_button = Gtk.ToggleButton(icon_name="view-list-symbolic"); self.header_bar.pack_start(self.sidebar_button)
+        self.sidebar_button.set_tooltip_text(app._("toggle_sidebar_tooltip"))
         self.title_widget = Adw.WindowTitle(title=app._("window_title")); self.header_bar.set_title_widget(self.title_widget)
         self.open_button = Gtk.Button(icon_name="document-open-symbolic"); self.header_bar.pack_start(self.open_button)
         nav_box = Gtk.Box(spacing=6); nav_box.get_style_context().add_class("linked")
@@ -65,7 +66,6 @@ class AppWindow(Adw.ApplicationWindow):
         self.sidebar_button.set_sensitive(is_doc_loaded)
         if not is_doc_loaded and self.flap.get_reveal_flap(): self.flap.set_reveal_flap(False)
 
-        # --- LÓGICA DEL TÍTULO CORREGIDA ---
         if is_doc_loaded:
             self.title_widget.set_subtitle(os.path.basename(app.current_file_path) if app.current_file_path else "")
         else:
@@ -77,7 +77,16 @@ class AppWindow(Adw.ApplicationWindow):
         if is_doc_loaded: self.page_entry_button.set_label(f"{app.current_page + 1} / {len(app.doc)}")
         else: self.page_entry_button.set_label("- / -")
 
-        self.sign_button.set_sensitive(is_doc_loaded and app.signature_rect is not None)
+        # --- LÓGICA DE TOOLTIPS CORREGIDA ---
+        can_sign = is_doc_loaded and app.signature_rect and app.active_cert_path
+        self.sign_button.set_sensitive(can_sign)
+        if can_sign:
+            self.sign_button.set_tooltip_text(app._("sign_button_tooltip_sign"))
+        elif not app.active_cert_path:
+            self.sign_button.set_tooltip_text(app._("no_cert_selected_error"))
+        else:
+            self.sign_button.set_tooltip_text(app._("sign_button_tooltip_select_area"))
+
         self.open_button.set_tooltip_text(app._("open_pdf"))
         self.prev_page_button.set_tooltip_text(app._("prev_page"))
         self.next_page_button.set_tooltip_text(app._("next_page"))

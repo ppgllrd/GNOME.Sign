@@ -15,11 +15,12 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.set_transient_for(self.app.window)
         self.set_modal(False)
         self.set_destroy_with_parent(False)
+        self.set_hide_on_close(False)
+        
         self._build_ui()
         self.update_ui()
 
     def _build_ui(self):
-        # General Page
         page = Adw.PreferencesPage.new()
         page.set_title(self.i18n._("general")); page.set_icon_name("preferences-system-symbolic")
         self.add(page)
@@ -30,17 +31,14 @@ class PreferencesWindow(Adw.PreferencesWindow):
         lang_row.set_selected(0 if current_lang_code == "es" else 1)
         lang_row.connect("notify::selected", self._on_language_changed); lang_group.add(lang_row)
         
-        # Certificates Page (solo creamos los contenedores estáticos)
         self.certs_page = Adw.PreferencesPage.new()
         self.certs_page.set_title(self.i18n._("certificates")); self.certs_page.set_icon_name("dialog-password-symbolic")
         self.add(self.certs_page)
-        self.certs_group = Adw.PreferencesGroup()
-        self.certs_page.add(self.certs_group)
 
     def _on_language_changed(self, combo_row, param):
         selected_idx = combo_row.get_selected()
         lang_code = "es" if selected_idx == 0 else "en"
-        self.app.get_action("change_lang").change_state(GLib.Variant('s', lang_code))
+        self.app.change_action_state("change_lang", GLib.Variant('s', lang_code))
 
     def update_ui(self):
         # --- CORRECCIÓN: Destruir y recrear el grupo es la forma más robusta ---
@@ -94,6 +92,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         if button.get_active():
             self.app.active_cert_path = path
             self.app.config.set_active_cert_path(path)
+            self.app.update_ui() # <- Añadido para actualizar la preview de la firma
     
     def _on_add_cert_clicked(self, button):
         def on_response(dialog, response):

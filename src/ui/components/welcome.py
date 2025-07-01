@@ -31,6 +31,12 @@ class WelcomeView(Gtk.Box):
 
         # Los añadimos a un contenedor y lo ponemos como hijo del status_page
         button_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        button_box.set_hexpand(False)
+
+        # 2. Le decimos al Gtk.Box que se alinee al centro del espacio horizontal
+        #    que le otorga su padre (el Adw.StatusPage).
+        button_box.set_halign(Gtk.Align.CENTER)
+        
         button_box.append(self.open_button)
         button_box.append(self.prefs_button)
         self.status_page.set_child(button_box)

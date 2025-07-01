@@ -26,7 +26,9 @@ class I18NManager:
                 "copy": "copia", "add_certificate": "Añadir Certificado...", "expires": "Caduca", "expired": "Caducado", "expires_soon": "Caduca pronto",
                 "welcome_prompt_no_cert": "Para empezar, añada un certificado", "welcome_button": "Abrir un PDF...", "welcome_prompt_cert_ok": "Listo para firmar",
                 "sign_button_tooltip_select_area": "Arrastre sobre el documento para seleccionar el área de la firma",
-                "preferences": "Preferencias", "general": "General", "language": "Idioma", "certificates": "Certificados", "close_button": "Cerrar"
+                "sign_button_tooltip_sign": "Firmar el documento", 
+                "preferences": "Preferencias", "general": "General", "language": "Idioma", "certificates": "Certificados", "close_button": "Cerrar",
+                "toggle_sidebar_tooltip": "Mostrar/Ocultar panel lateral"
             },
             "en": {
                 "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
@@ -50,7 +52,9 @@ class I18NManager:
                 "copy": "copy", "add_certificate": "Add Certificate...", "expires": "Expires", "expired": "Expired", "expires_soon": "Expires soon",
                 "welcome_prompt_no_cert": "To begin, add a certificate", "welcome_button": "Open a PDF...", "welcome_prompt_cert_ok": "Ready to Sign",
                 "sign_button_tooltip_select_area": "Drag on the document to select the signature area",
-                "preferences": "Preferences", "general": "General", "language": "Language", "certificates": "Certificates", "close_button": "Close"
+                "sign_button_tooltip_sign": "Sign the document",
+                "preferences": "Preferences", "general": "General", "language": "Language", "certificates": "Certificates", "close_button": "Close",
+                "toggle_sidebar_tooltip": "Show/Hide sidebar"
             }
         }
 

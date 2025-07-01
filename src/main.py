@@ -8,15 +8,14 @@ from html.parser import HTMLParser
 from i18n import I18NManager
 from certificate_manager import CertificateManager, KEYRING_SCHEMA
 from config_manager import ConfigManager
-from ui.app_window import AppWindow
-from ui.stamp_editor_window import StampEditorWindow
-from ui.preferences_window import PreferencesWindow
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign import signers
 from pyhanko.sign.signers.pdf_signer import PdfSigner, PdfSignatureMetadata
 from pyhanko.keys.internal import translate_pyca_cryptography_key_to_asn1, translate_pyca_cryptography_cert_to_asn1
 from pyhanko_certvalidator.registry import SimpleCertificateStore
 from cryptography import x509
+from ui.dialogs import create_stamp_editor_dialog # <-- Importa la función correcta
+
 
 class PangoToHtmlConverter(HTMLParser):
     def __init__(self):
@@ -54,7 +53,7 @@ class GnomeSign(Adw.Application):
         self.signature_rect, self.is_dragging_rect = None, False
         self.drag_offset_x, self.drag_offset_y = 0, 0
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
-        self.window, self.stamp_editor_window, self.preferences_window = None, None, None
+        self.window, self.stamp_editor_window = None, None
         self.signatures = []
 
     def _(self, key): return self.i18n._(key)
@@ -122,24 +121,28 @@ class GnomeSign(Adw.Application):
             if self.window: self.window.show_toast(f"File not found: {file_path}")
             self.config.remove_recent_file(file_path); self.config.save(); self.update_ui()
     
+    # --- GESTIÓN DE VENTANAS SECUNDARIAS RESTAURADA A LA FORMA CORRECTA ---
     def on_preferences_clicked(self, action, param):
         from ui.preferences_window import PreferencesWindow
-        if self.preferences_window and self.preferences_window.is_visible():
-            self.preferences_window.present()
-            return
-        self.preferences_window = PreferencesWindow(application=self)
-        self.preferences_window.connect("destroy", lambda w: setattr(self, "preferences_window", None))
-        self.preferences_window.present()
+        
+        # ELIMINAMOS TODA LA LÓGICA DE ESTADO.
+        # Ya no comprobamos si 'self.preferences_window' existe.
+        # Ya no intentamos reutilizar una instancia.
+        # Ya no conectamos a la señal "destroy".
+        
+        # La nueva lógica es simple: cada vez que el usuario hace clic,
+        # creamos una ventana de preferencias NUEVA.
+        preferences_win = PreferencesWindow(application=self)
+        
+        # Y la mostramos.
+        preferences_win.present()
 
     def on_edit_stamps_clicked(self, action, param):
-        from ui.stamp_editor_window import StampEditorWindow
-        if self.stamp_editor_window and self.stamp_editor_window.is_visible():
-            self.stamp_editor_window.present()
-            return
-        self.stamp_editor_window = StampEditorWindow(application=self)
-        self.stamp_editor_window.connect("destroy", lambda w: setattr(self, "stamp_editor_window", None))
-        self.stamp_editor_window.present()
-
+            # Ya no necesitamos gestionar una instancia persistente de la ventana.
+            # El diálogo se crea, se ejecuta y se destruye en esta misma función.
+            # Esto elimina toda la clase de errores de ciclo de vida que hemos visto.
+            create_stamp_editor_dialog(self.window, self, self.config)
+    
     def on_lang_change_state(self, action, value):
         new_lang = value.get_string()
         if action.get_state().get_string() != new_lang:
@@ -174,6 +177,7 @@ class GnomeSign(Adw.Application):
                 writer = IncrementalPdfFileWriter(f); signed_bytes = pdf_signer.sign_pdf(writer)
                 f.seek(0); f.write(signed_bytes.getbuffer()); f.truncate()
             
+            # FLUJO CORREGIDO
             if self.window: self.window.show_toast(self._("sign_success_message").format(os.path.basename(output_path)), self._("open"), lambda: self.open_file_path(output_path))
         except Exception as e:
             if self.window: self.window.show_toast(self._("sig_error_message").format(e))
@@ -186,9 +190,19 @@ class GnomeSign(Adw.Application):
         dialog.set_authors(["Pepe Gallardo", "Gemini"]); dialog.present()
         
     def update_ui(self):
-        if self.window: self.window.update_ui(self)
-        if self.preferences_window: self.preferences_window.update_ui()
+        # --- LÓGICA AÑADIDA PARA CONTROLAR LA ACCIÓN "SIGN" ---
+        # 1. Determinar si se puede firmar usando la lógica de la aplicación.
+        can_sign = self.doc is not None and self.signature_rect is not None and self.active_cert_path is not None
         
+        # 2. Obtener la acción "sign". El método correcto es lookup_action.
+        sign_action = self.lookup_action("sign")
+        
+        # 3. Habilitarla o deshabilitarla. La UI se actualizará automáticamente.
+        if sign_action:
+            sign_action.set_enabled(can_sign)
+
+        if self.window: self.window.update_ui(self)
+
     def reset_signature_state(self):
         self.signature_rect = None
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
@@ -237,7 +251,9 @@ class GnomeSign(Adw.Application):
                 self.is_dragging_rect, self.drag_offset_x, self.drag_offset_y = True, start_x - x, start_y - y; return
         self.is_dragging_rect, self.start_x, self.start_y = False, start_x, start_y
         self.end_x, self.end_y = start_x, start_y; self.signature_rect = None
-        self.window.update_header_bar_state(self); self.window.drawing_area.queue_draw()
+        self.update_ui()
+
+        self.window.drawing_area.queue_draw()
 
     def on_drag_update(self, gesture, offset_x, offset_y):
         success, start_point_x, start_point_y = gesture.get_start_point()
@@ -255,7 +271,9 @@ class GnomeSign(Adw.Application):
             width, height = abs(self.start_x - self.end_x), abs(self.start_y - self.end_y)
             self.signature_rect = (x1, y1, width, height) if width > 5 and height > 5 else None
         self.is_dragging_rect = False
-        if self.window: self.window.update_header_bar_state(self); self.window.drawing_area.queue_draw()
+        self.update_ui()
+        if self.window:
+            self.window.drawing_area.queue_draw()
 
     def get_parsed_stamp_text(self, certificate, override_template=None):
         if override_template is not None: template = override_template
