@@ -1,11 +1,10 @@
+# config_manager.py
 import os
 import json
 import uuid
 from collections import deque
 
 class ConfigManager:
-    """Handles reading and writing the application's configuration file."""
-    
     MAX_RECENT_FILES = 10
 
     def __init__(self, config_path="~/.config/gnomesign/config.json"):
@@ -16,87 +15,56 @@ class ConfigManager:
         config_dir = os.path.dirname(self.config_file)
         os.makedirs(config_dir, exist_ok=True)
         try:
-            with open(self.config_file, 'r') as f:
-                self.config_data = json.load(f)
-        except (IOError, json.JSONDecodeError):
-            self.config_data = {}
+            with open(self.config_file, 'r') as f: self.config_data = json.load(f)
+        except (IOError, json.JSONDecodeError): self.config_data = {}
         
-        # Ensure default keys exist
         defaults = {
-            'certificates': [],
-            'recent_files': [],
-            'signature_templates': [],
-            'active_template_id': None,
-            'last_folder': os.path.expanduser("~"),
-            'language': "es"
+            'certificates': [], 'recent_files': [], 'signature_templates': [],
+            'active_template_id': None, 'last_folder': os.path.expanduser("~"),
+            'language': "es", 'active_cert_path': None # <-- NUEVA CLAVE POR DEFECTO
         }
-        for key, value in defaults.items():
-            self.config_data.setdefault(key, value)
-
+        for key, value in defaults.items(): self.config_data.setdefault(key, value)
         self._create_default_templates_if_needed()
 
     def _create_default_templates_if_needed(self):
         if not self.config_data['signature_templates']:
             simple_id = uuid.uuid4().hex
-            simple_template = {
-                "id": simple_id, "name": "Simple",
-                "template_es": "Firmado digitalmente por:\n<b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd-MM-yyyy$$",
-                "template_en": "Digitally signed by:\n<b>$$SUBJECTCN$$</b>\nDate: $$SIGNDATE=yyyy-MM-dd$$"
-            }
+            simple_template = { "id": simple_id, "name": "Simple", "template_es": "Firmado digitalmente por:\n<b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd-MM-yyyy$$", "template_en": "Digitally signed by:\n<b>$$SUBJECTCN$$</b>\nDate: $$SIGNDATE=yyyy-MM-dd$$" }
             detailed_id = uuid.uuid4().hex
-            detailed_template = {
-                "id": detailed_id, "name": "Detallado/Detailed",
-                "template_es": "Firmado digitalmente por:\n<b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd-MM-yyyy$$\nCertificado emitido por:\n<b>$$ISSUERCN$$</b>\nNúmero de serie del certificado:\n<small><b>$$CERTSERIAL$$</b></small>",
-                "template_en": "Digitally signed by:\n<b>$$SUBJECTCN$$</b>\nDate: $$SIGNDATE=yyyy-MM-dd$$\nCertificate issued by:\n<b>$$ISSUERCN$$</b>\nCertificate serial number:\n<small><b>$$CERTSERIAL$$</b></small>"
-            }
+            detailed_template = { "id": detailed_id, "name": "Detallado/Detailed", "template_es": "Firmado digitalmente por:\n<b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd-MM-yyyy$$\nCertificado emitido por:\n<b>$$ISSUERCN$$</b>\nNúmero de serie del certificado:\n<small><b>$$CERTSERIAL$$</b></small>", "template_en": "Digitally signed by:\n<b>$$SUBJECTCN$$</b>\nDate: $$SIGNDATE=yyyy-MM-dd$$\nCertificate issued by:\n<b>$$ISSUERCN$$</b>\nCertificate serial number:\n<small><b>$$CERTSERIAL$$</b></small>" }
             self.config_data['signature_templates'].extend([simple_template, detailed_template])
-            self.config_data['active_template_id'] = simple_id
-            self.save()
+            self.config_data['active_template_id'] = simple_id; self.save()
 
     def save(self):
         try:
-            with open(self.config_file, 'w') as f:
-                json.dump(self.config_data, f, indent=2)
-        except IOError as e:
-            print(f"Error saving configuration: {e}")
+            with open(self.config_file, 'w') as f: json.dump(self.config_data, f, indent=2)
+        except IOError as e: print(f"Error saving configuration: {e}")
             
-    def get_cert_paths(self):
-        return [c["path"] for c in self.config_data.get("certificates", [])]
+    def get_cert_paths(self): return [c["path"] for c in self.config_data.get("certificates", [])]
         
     def add_cert_path(self, path):
-        if path not in self.get_cert_paths():
-            self.config_data["certificates"].append({"path": path})
+        if path not in self.get_cert_paths(): self.config_data["certificates"].append({"path": path})
 
     def remove_cert_path(self, path_to_remove):
-        self.config_data["certificates"] = [c for c in self.config_data["certificates"] if c.get("path") != path_to_remove]
-        self.save()
+        self.config_data["certificates"] = [c for c in self.config_data["certificates"] if c.get("path") != path_to_remove]; self.save()
 
-    def get_recent_files(self):
-        return self.config_data.get("recent_files", [])
+    def get_recent_files(self): return self.config_data.get("recent_files", [])
 
     def add_recent_file(self, file_path):
         recent_files = deque(self.get_recent_files(), maxlen=self.MAX_RECENT_FILES)
-        if file_path in recent_files:
-            recent_files.remove(file_path)
-        recent_files.appendleft(file_path)
-        self.config_data["recent_files"] = list(recent_files)
+        if file_path in recent_files: recent_files.remove(file_path)
+        recent_files.appendleft(file_path); self.config_data["recent_files"] = list(recent_files)
 
     def remove_recent_file(self, file_path):
-        if file_path in self.config_data["recent_files"]:
-            self.config_data["recent_files"].remove(file_path)
+        if file_path in self.config_data["recent_files"]: self.config_data["recent_files"].remove(file_path)
             
-    def get_signature_templates(self):
-        return self.config_data.get("signature_templates", [])
-
-    def get_template_by_id(self, template_id):
-        return next((t for t in self.get_signature_templates() if t['id'] == template_id), None)
+    def get_signature_templates(self): return self.config_data.get("signature_templates", [])
+    def get_template_by_id(self, template_id): return next((t for t in self.get_signature_templates() if t['id'] == template_id), None)
 
     def save_template(self, template_data):
         templates = self.get_signature_templates()
         for i, t in enumerate(templates):
-            if t['id'] == template_data['id']:
-                templates[i] = template_data
-                self.save(); return
+            if t['id'] == template_data['id']: templates[i] = template_data; self.save(); return
         templates.append(template_data); self.save()
 
     def delete_template(self, template_id):
@@ -110,6 +78,11 @@ class ConfigManager:
     def get_active_template_id(self): return self.config_data.get('active_template_id')
     def set_active_template_id(self, template_id): self.config_data['active_template_id'] = template_id; self.save()
     def get_active_template(self): return self.get_template_by_id(self.get_active_template_id())
+    
+    # --- MÉTODOS NUEVOS/CORREGIDOS PARA EL CERTIFICADO ACTIVO ---
+    def get_active_cert_path(self): return self.config_data.get("active_cert_path")
+    def set_active_cert_path(self, path): self.config_data['active_cert_path'] = path; self.save()
+    
     def get_last_folder(self): return self.config_data.get("last_folder", os.path.expanduser("~"))
     def set_last_folder(self, path): self.config_data["last_folder"] = path
     def get_language(self): return self.config_data.get("language", "es")
