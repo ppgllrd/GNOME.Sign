@@ -7,13 +7,73 @@ from html.parser import HTMLParser
 from i18n import I18NManager
 from certificate_manager import CertificateManager, KEYRING_SCHEMA
 from config_manager import ConfigManager
+from pyhanko.pdf_utils.reader import PdfFileReader
+from pyhanko.sign.validation import validate_pdf_signature
+from pyhanko_certvalidator import ValidationContext
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign import signers
 from pyhanko.sign.signers.pdf_signer import PdfSigner, PdfSignatureMetadata
 from pyhanko.keys.internal import translate_pyca_cryptography_key_to_asn1, translate_pyca_cryptography_cert_to_asn1
 from pyhanko_certvalidator.registry import SimpleCertificateStore
 from cryptography import x509
-from ui.dialogs import create_stamp_editor_dialog
+from ui.dialogs import create_stamp_editor_dialog, show_message_dialog
+
+
+class SignatureDetails:
+    """A data class to hold processed information about an existing signature."""
+    def __init__(self, pyhanko_sig, validation_status):
+        self.pyhanko_sig = pyhanko_sig
+        self.status = validation_status
+        self.valid = validation_status.bottom_line
+        self.signer_name = "Unknown"
+        self.sign_time = None
+        self.issuer_cn = "Unknown"
+        self.serial = "Unknown"
+
+        cert = getattr(validation_status, 'signer_cert', None)
+        if not cert:
+            cert = pyhanko_sig.signer_cert
+
+        def get_cn_from_name(name_obj):
+            """Extracts the Common Name by accessing the .native property of an asn1crypto Name object."""
+            if not name_obj:
+                return "N/A"
+            try:
+                native_dict = name_obj.native
+                return native_dict.get('common_name', str(name_obj))
+            except Exception:
+                return str(name_obj)
+
+        if cert:
+            try:
+                self.signer_name = get_cn_from_name(cert.subject)
+                self.issuer_cn = get_cn_from_name(cert.issuer)
+                self.serial = str(cert.serial_number)
+            except Exception as e:
+                print(f"Error parsing certificate details: {e}")
+                self.signer_name = str(cert.subject) if cert.subject else "Parsing Error"
+                self.issuer_cn = str(cert.issuer) if cert.issuer else "Parsing Error"
+
+        # --- INICIO CAMBIOS: CORRECCIÓN DEFINITIVA DE ACCESO A ATRIBUTOS ---
+        self.sign_time = None
+        try:
+            # signed_attrs is a list-like object, so we must iterate through it.
+            signed_attrs = self.pyhanko_sig.signer_info['signed_attrs']
+            for attr in signed_attrs:
+                # The type of each attribute is accessed via its 'type' key.
+                if attr['type'].native == 'signing_time':
+                    # The value is in the 'values' list, we take the first element.
+                    self.sign_time = attr['values'][0].native
+                    break  # Exit the loop once the attribute is found.
+        except (KeyError, AttributeError, IndexError, TypeError) as e:
+            # This broad catch-all handles cases where the structure isn't as expected.
+            print(f"Could not extract signing_time from signed attributes: {e}")
+            self.sign_time = None
+
+        # Fallback to the timestamp token if signing_time wasn't found in the signed attributes.
+        if not self.sign_time and validation_status.timestamp_validity:
+            self.sign_time = validation_status.timestamp_validity.timestamp
+        # --- FIN CAMBIOS ---
 
 
 class PangoToHtmlConverter(HTMLParser):
@@ -59,7 +119,7 @@ class GnomeSign(Adw.Application):
     """The main application class, handling state, actions, and core logic."""
     __gsignals__ = {
         'language-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
-        'certificates-changed': (GObject.SignalFlags.RUN_FIRST, None, ()) # <-- AÑADIR ESTA LÍNEA
+        'certificates-changed': (GObject.SignalFlags.RUN_FIRST, None, ())
     }
 
     def __init__(self):
@@ -90,6 +150,7 @@ class GnomeSign(Adw.Application):
         self.active_cert_path = self.config.get_active_cert_path()
         from ui.app_window import AppWindow
         self.window = AppWindow(application=self)
+        self.window.sidebar.connect("signature-selected", self.on_signature_selected)
         self.connect("certificates-changed", self.on_certificates_changed) 
 
         def on_window_close_request(window):
@@ -134,19 +195,52 @@ class GnomeSign(Adw.Application):
         try:
             if not os.path.exists(file_path): raise FileNotFoundError(f"File not found: {file_path}")
             if self.doc: self.doc.close()
+            
             self.signatures = []
+            try:
+                with open(file_path, 'rb') as f:
+                    r = PdfFileReader(f, strict=False)
+                    vc = ValidationContext(allow_fetching=True) 
+                    for sig in r.embedded_signatures:
+                        status = validate_pdf_signature(sig, vc)
+                        self.signatures.append(SignatureDetails(sig, status))
+            except Exception as e:
+                print(f"Could not analyze for signatures: {e}")
+            
             self.current_file_path = file_path; self.doc = fitz.open(file_path); self.current_page = 0
             self.config.add_recent_file(file_path); self.config.set_last_folder(os.path.dirname(file_path)); self.config.save()
             self.reset_signature_state(); self.display_page(self.current_page)
             if self.window: self.window.sidebar.populate(self.doc, self.signatures)
             self.update_ui()
 
-            if self.window and self.active_cert_path and show_toast:
+            if self.window and self.signatures:
+                 self.window.show_toast(self._("signatures_found_toast").format(len(self.signatures)), timeout=4)
+            elif self.window and self.active_cert_path and show_toast:
                 self.window.show_toast(self._("toast_select_area"), timeout=4)
 
         except Exception as e:
             if self.window: self.window.show_toast(self._("open_pdf_error").format(e))
             self.doc = None; self.signatures = []; self.update_ui()
+            
+    def on_signature_selected(self, sidebar, sig_details):
+        """Handles a click on a signature in the sidebar, showing a details dialog."""
+        title = self._("sig_details_title")
+        
+        validity_text = f"<b>{self._('sig_validity_title')}</b>\n"
+        if sig_details.valid:
+            validity_text += f"<span color='green'>{self._('sig_validity_ok')}</span>"
+        else:
+            validity_text += f"<span color='red'>{self._('sig_validity_error')}</span>"
+        
+        details_text = (f"{validity_text}\n\n"
+                        f"<b>{self._('signer')}:</b> {GLib.markup_escape_text(sig_details.signer_name)}\n"
+                        f"<b>{self._('sign_date')}:</b> {sig_details.sign_time.strftime('%Y-%m-%d %H:%M:%S %Z') if sig_details.sign_time else 'N/A'}\n"
+                        f"<b>{self._('issuer')}:</b> {GLib.markup_escape_text(sig_details.issuer_cn)}\n"
+                        f"<b>{self._('serial')}:</b> {sig_details.serial}")
+
+        show_message_dialog(
+            self.window, title, details_text, Gtk.MessageType.INFO
+        )
 
     def on_open_pdf_clicked(self, action, param):
         """Handles the 'open' action, showing a file chooser dialog."""
@@ -155,13 +249,12 @@ class GnomeSign(Adw.Application):
                 file = dialog.get_file()
                 if file: self.open_file_path(file.get_path())
         
-        # Use Gtk.FileChooserNative for better desktop integration
         file_chooser = Gtk.FileChooserNative.new(
-            self._("open_pdf_dialog_title"), # title
-            self.window,                     # transient_for (parent)
-            Gtk.FileChooserAction.OPEN,      # action
-            self._("open"),                  # accept_label
-            self._("cancel")                 # cancel_label
+            self._("open_pdf_dialog_title"),
+            self.window,
+            Gtk.FileChooserAction.OPEN,
+            self._("open"),
+            self._("cancel")
         )
 
         filter_pdf = Gtk.FileFilter()
@@ -193,19 +286,17 @@ class GnomeSign(Adw.Application):
             self.preferences_window.present()
             return
 
-        # Determine which page to open based on the action name
         page_name = None
         if action.get_name() == 'manage_certs':
             page_name = 'certificates'
             
         from ui.preferences_window import PreferencesWindow
         
-        # Pass the target page name to the constructor
         self.preferences_window = PreferencesWindow(application=self, transient_for=self.window, initial_page_name=page_name)
         self.preferences_window.connect("destroy", self.on_preferences_window_destroyed)
         self.preferences_window.present()
 
-    def on_preferences_window_destroyed(self, widget): # <-- 3. AÑADIR ESTE NUEVO MÉTODO
+    def on_preferences_window_destroyed(self, widget):
         """
         Callback for when the preferences window is destroyed.
         It resets our reference to None, allowing a new window to be created next time.
@@ -214,7 +305,6 @@ class GnomeSign(Adw.Application):
 
     def on_edit_stamps_clicked(self, action, param):
         """Handles the 'edit_stamps' action by opening the stamp editor dialog."""
-        # The dialog is modal and its lifecycle is managed within the function call.
         create_stamp_editor_dialog(self.window, self, self.config)
     
     def on_lang_change_state(self, action, value):
@@ -244,18 +334,55 @@ class GnomeSign(Adw.Application):
         version = 1
         while os.path.exists(output_path):
             output_path = f"{os.path.splitext(self.current_file_path)[0]}-signed-{version}.pdf"; version += 1
-        shutil.copyfile(self.current_file_path, output_path)
+        
         try:
-            self._apply_visual_stamp(output_path, certificate)
-            signer = signers.SimpleSigner(translate_pyca_cryptography_cert_to_asn1(certificate), translate_pyca_cryptography_key_to_asn1(private_key), SimpleCertificateStore())
-            signer_cn = certificate.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
-            meta = PdfSignatureMetadata(field_name=f'Signature-{int(datetime.now().timestamp() * 1000)}', reason=self._("sign_reason"), name=signer_cn)
-            pdf_signer = PdfSigner(meta, signer)
-            with open(output_path, "rb+") as f:
-                writer = IncrementalPdfFileWriter(f, strict=False)
-                signed_bytes = pdf_signer.sign_pdf(writer)
-                f.seek(0); f.write(signed_bytes.getbuffer()); f.truncate()
+            signer = signers.SimpleSigner(
+                signing_cert=certificate,
+                signing_key=private_key,
+                cert_registry=SimpleCertificateStore.from_certs([certificate])
+            )
             
+            x, y, w, h = self.signature_rect
+            view_width = self.window.drawing_area.get_width()
+            scale = self.page.rect.width / view_width if view_width > 0 else 1
+            fitz_rect = fitz.Rect(x * scale, y * scale, (x + w) * scale, (y + h) * scale)
+            
+            from pyhanko.stamp import StaticStampStyle
+            from pyhanko.pdf_utils.writer import PdfFileWriter
+            
+            stamp_writer = PdfFileWriter()
+            stamp_writer.add_page(
+                media_box=fitz.Rect(0, 0, fitz_rect.width, fitz_rect.height)
+            )
+            
+            parsed_pango_text = self.get_parsed_stamp_text(certificate)
+            converter = PangoToHtmlConverter(); converter.feed(parsed_pango_text.replace('\n', '<br/>'))
+            html_content = f"""<div style="width:100%;height:100%;display:table;text-align:center;line-height:1.2; font-size: 8pt;"><div style="display:table-cell;vertical-align:middle;">{converter.get_html()}</div></div>"""
+
+            from io import BytesIO
+            temp_doc = fitz.open()
+            temp_page = temp_doc.new_page(width=fitz_rect.width, height=fitz_rect.height)
+            temp_page.insert_htmlbox(fitz.Rect(0, 0, fitz_rect.width, fitz_rect.height) + (5, 5, -5, -5), html_content, rotate=0)
+            
+            temp_pdf_bytes = BytesIO(temp_doc.tobytes())
+            temp_doc.close()
+            
+            stamp_style = StaticStampStyle.from_pdf(temp_pdf_bytes)
+
+            meta = PdfSignatureMetadata(
+                field_name=f'Signature-{int(datetime.now().timestamp() * 1000)}',
+                reason=self._("sign_reason"),
+                location="GNOME Sign App",
+                page=self.current_page,
+                box=(fitz_rect.x0, fitz_rect.y0, fitz_rect.x1, fitz_rect.y1)
+            )
+            
+            pdf_signer = PdfSigner(meta, signer, stamp_style=stamp_style)
+
+            with open(self.current_file_path, "rb") as orig_f, open(output_path, "wb") as out_f:
+                writer = IncrementalPdfFileWriter(orig_f, strict=False)
+                pdf_signer.sign_pdf(writer, output=out_f)
+
             if self.window: 
                 self.window.show_toast(
                     self._("sign_success_message").format(os.path.basename(output_path)), 
@@ -265,7 +392,7 @@ class GnomeSign(Adw.Application):
         except Exception as e:
             if self.window: self.window.show_toast(self._("sig_error_message").format(e))
             import traceback; traceback.print_exc()
-
+        
     def on_about_clicked(self, action, param):
         """Handles the 'about' action, showing the application's about dialog."""
         dialog = Gtk.AboutDialog(transient_for=self.window, modal=True)
@@ -369,9 +496,12 @@ class GnomeSign(Adw.Application):
             template_obj = self.config.get_active_template()
             if not template_obj: return "Error: No active signature template found."
             template = template_obj.get(f"template_{self.i18n.get_language()}", template_obj.get("template_en", ""))
-        def get_cn(name):
-            try: return name.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
-            except (IndexError, AttributeError): return name.rfc4514_string()
+        
+        def get_cn(name_obj):
+            if not name_obj: return "N/A"
+            try: return name_obj.native.get('common_name', str(name_obj))
+            except (AttributeError, TypeError): return str(name_obj)
+            
         text = template.replace("$$SUBJECTCN$$", get_cn(certificate.subject)).replace("$$ISSUERCN$$", get_cn(certificate.issuer)).replace("$$CERTSERIAL$$", str(certificate.serial_number))
         date_match = re.search(r'\$\$SIGNDATE=(.*?)\$\$', text)
         if date_match:

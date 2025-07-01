@@ -1,5 +1,3 @@
-# i18n.py
-
 class I18NManager:
     """A simple internationalization manager to handle string translations."""
     def __init__(self, initial_language="es"):
@@ -23,6 +21,7 @@ class I18NManager:
                 "template_en": "Plantilla en Inglés (Marcado Pango)", "preview": "Vista Previa", "new": "Nueva", "duplicate": "Duplicar", "save": "Guardar",
                 "delete": "Eliminar", "set_as_active": "Usar para firmar", "unsaved_changes_title": "Cambios sin Guardar",
                 "unsaved_changes_message": "Tiene cambios sin guardar. ¿Desea continuar y descartarlos?", "confirm_close_message": "¿Cerrar sin guardar los cambios?",
+                # --- INICIO CAMBIOS: NUEVAS CADENAS ---
                 "issuer": "Emisor", "serial": "Nº Serie", "path": "Ruta", "confirm_delete_cert_title": "Confirmar Eliminación",
                 "confirm_delete_cert_message": "¿Está seguro de que desea eliminar permanentemente este certificado y su contraseña guardada?",
                 "copy": "copia", "add_certificate": "Añadir Certificado...", "expires": "Caduca", "expired": "Caducado", "expires_soon": "Caduca pronto",
@@ -30,10 +29,17 @@ class I18NManager:
                 "sign_button_tooltip_select_area": "Arrastre sobre el documento para seleccionar el área de la firma",
                 "sign_button_tooltip_sign": "Firmar el documento", 
                 "preferences": "Preferencias", "general": "General", "language": "Idioma", "certificates": "Certificados", "close_button": "Cerrar",
-                "toggle_sidebar_tooltip": "Mostrar/Ocultar panel lateral",
-                "toggle_sidebar_tooltip": "Mostrar/Ocultar panel lateral",
+                "toggle_sidebar_tooltip": "Mostrar/Ocular panel lateral",
                 "manage_certificates_tooltip": "Gestionar certificados",
-                "toast_select_area": "Arrastre para seleccionar un área y pulse el botón de firma"
+                "toast_select_area": "Arrastre para seleccionar un área y pulse el botón de firma",
+                "signatures_found_toast": "Se encontraron {} firmas en el documento.",
+                "sig_details_title": "Detalles de la Firma",
+                "sig_validity_title": "Estado de la Firma",
+                "sig_validity_ok": "La firma es válida y el documento no ha sido modificado.",
+                "sig_validity_error": "La firma no es válida o el documento ha sido modificado.",
+                "signer": "Firmante",
+                "sign_date": "Fecha de Firma"
+                # --- FIN CAMBIOS: NUEVAS CADENAS ---
             },
             "en": {
                 "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
@@ -52,6 +58,7 @@ class I18NManager:
                 "template_en": "English Template (Pango Markup)", "preview": "Preview", "new": "New", "duplicate": "Duplicate", "save": "Save",
                 "delete": "Delete", "set_as_active": "Use for signing", "unsaved_changes_title": "Unsaved Changes",
                 "unsaved_changes_message": "You have unsaved changes. Do you want to proceed and discard them?", "confirm_close_message": "Close without saving changes?",
+                # --- INICIO CAMBIOS: NUEVAS CADENAS ---
                 "issuer": "Issuer", "serial": "Serial", "path": "Path", "confirm_delete_cert_title": "Confirm Deletion",
                 "confirm_delete_cert_message": "Are you sure you want to permanently delete this certificate and its saved password?",
                 "copy": "copy", "add_certificate": "Add Certificate...", "expires": "Expires", "expired": "Expired", "expires_soon": "Expires soon",
@@ -60,9 +67,16 @@ class I18NManager:
                 "sign_button_tooltip_sign": "Sign the document",
                 "preferences": "Preferences", "general": "General", "language": "Language", "certificates": "Certificates", "close_button": "Close",
                 "toggle_sidebar_tooltip": "Show/Hide sidebar",
-                "toggle_sidebar_tooltip": "Show/Hide sidebar",
                 "manage_certificates_tooltip": "Manage certificates",
-                "toast_select_area": "Drag to select an area and press the sign button"
+                "toast_select_area": "Drag to select an area and press the sign button",
+                "signatures_found_toast": "Found {} signatures in the document.",
+                "sig_details_title": "Signature Details",
+                "sig_validity_title": "Signature Status",
+                "sig_validity_ok": "The signature is valid and the document has not been modified.",
+                "sig_validity_error": "The signature is not valid or the document has been modified.",
+                "signer": "Signer",
+                "sign_date": "Signature Date"
+                # --- FIN CAMBIOS: NUEVAS CADENAS ---
             }
         }
 
