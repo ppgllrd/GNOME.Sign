@@ -287,13 +287,13 @@ def create_stamp_editor_dialog(parent, app, config):
     def on_view_focus(widget, param_spec):
         """Tracks which text view (ES or EN) last had focus."""
         if widget.get_property("has-focus"): state["last_focused_view"] = widget
-    text_es_view.connect("notify::has-focus", on_view_focus); text_en_view.connect("notify::has-focus", on_view_focus)
     
+    text_es_view.connect("notify::has-focus", on_view_focus); text_en_view.connect("notify::has-focus", on_view_focus)    
     text_box_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6); right_pane.append(toolbar); right_pane.append(text_box_container)
     text_box_container.append(Gtk.Label(label=f"<b>{i18n_func('template_es')}</b>", use_markup=True, xalign=0))
-    scrolled_es = Gtk.ScrolledWindow(child=text_es_view, hscrollbar_policy="never", min_content_height=80); text_box_container.append(scrolled_es)
+    scrolled_es = Gtk.ScrolledWindow(vexpand=True, hexpand=True, child=text_es_view, hscrollbar_policy="never", min_content_height=80); text_box_container.append(scrolled_es)
     text_box_container.append(Gtk.Label(label=f"<b>{i18n_func('template_en')}</b>", use_markup=True, xalign=0))
-    scrolled_en = Gtk.ScrolledWindow(child=text_en_view, hscrollbar_policy="never", min_content_height=80); text_box_container.append(scrolled_en)
+    scrolled_en = Gtk.ScrolledWindow(vexpand=True, hexpand=True, child=text_en_view, hscrollbar_policy="never", min_content_height=80); text_box_container.append(scrolled_en)
 
     preview_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, vexpand=True); right_pane.append(preview_container)
     preview_container.append(Gtk.Label(label=f"<b>{i18n_func('preview')}</b>", use_markup=True, xalign=0))
