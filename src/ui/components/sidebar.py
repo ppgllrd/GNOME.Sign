@@ -7,8 +7,11 @@ import fitz
 THUMBNAIL_WIDTH = 120
 
 class Sidebar(Gtk.ScrolledWindow):
+    """A sidebar widget that displays page thumbnails and a list of existing signatures."""
     __gsignals__ = { 'page-selected': (GObject.SignalFlags.RUN_FIRST, None, (int,)), 'signature-selected': (GObject.SignalFlags.RUN_FIRST, None, (object,)) }
+    
     def __init__(self, **kwargs):
+        """Initializes the sidebar widget."""
         super().__init__(**kwargs)
         self.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.set_vexpand(True)
@@ -20,6 +23,7 @@ class Sidebar(Gtk.ScrolledWindow):
         self.block_signal = False
 
     def populate(self, doc, signatures):
+        """Fills the sidebar with page thumbnails and signature information from a document."""
         self.pages_listbox.remove_all(); self.signatures_listbox.remove_all()
         if not doc: self.signatures_separator.set_visible(False); return
         for page_num in range(len(doc)):
@@ -45,18 +49,25 @@ class Sidebar(Gtk.ScrolledWindow):
         else: self.signatures_separator.set_visible(False)
             
     def select_page(self, page_num):
+        """Programmatically selects a specific page in the thumbnail list and ensures it is visible."""
         self.block_signal = True
         row = self.pages_listbox.get_row_at_index(page_num)
         if row:
             self.pages_listbox.select_row(row)
-            # --- CORRECCIÓN SINCRONIZACIÓN: HACEMOS LA FILA VISIBLE ---
+            # Ensure the selected row is scrolled into view.
             row.grab_focus()
         self.block_signal = False
 
     def _on_page_row_selected(self, listbox, row):
+        """Emits the 'page-selected' signal when a user clicks a page thumbnail."""
         if row and not self.block_signal: self.emit("page-selected", row.get_index())
-    def _on_signature_row_activated(self, row, sig_obj): self.emit("signature-selected", sig_obj)
+
+    def _on_signature_row_activated(self, row, sig_obj):
+        """Emits the 'signature-selected' signal when a signature row is activated."""
+        self.emit("signature-selected", sig_obj)
+
     def focus_on_signatures(self):
+        """Scrolls the view to make the list of signatures visible."""
         sig_list_alloc = self.signatures_listbox.get_allocation()
         adj = self.get_vadjustment()
         if adj: adj.set_value(sig_list_alloc.y)

@@ -5,13 +5,18 @@ from gi.repository import Gtk, Adw, Gdk, Gio, GLib, Pango, PangoCairo, GdkPixbuf
 import os, fitz
 
 class AppWindow(Adw.ApplicationWindow):
+    """The main application window, containing the header bar, sidebar, and content area."""
     def __init__(self, **kwargs):
+        """Initializes the main application window and its UI."""
         super().__init__(**kwargs)
         from .components.sidebar import Sidebar; from .components.welcome import WelcomeView
+        self.active_toasts = []
         self.set_default_size(900, 700); self.set_icon_name("org.pepeg.GnomeSign")
+        self.set_hide_on_close(False)
         self._build_ui(Sidebar, WelcomeView); self._connect_signals()
 
     def _build_ui(self, Sidebar, WelcomeView):
+        """Constructs the main UI layout and widgets."""
         app = self.get_application()
         self.toast_overlay = Adw.ToastOverlay.new(); self.set_content(self.toast_overlay)
         self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL); self.toast_overlay.set_child(self.main_box)
@@ -26,6 +31,7 @@ class AppWindow(Adw.ApplicationWindow):
         self.next_page_button = Gtk.Button(icon_name="go-next-symbolic"); nav_box.append(self.prev_page_button); nav_box.append(self.page_entry_button); nav_box.append(self.next_page_button)
         self.header_bar.pack_start(nav_box)
         self.menu_button = Gtk.MenuButton(icon_name="open-menu-symbolic"); self.header_bar.pack_end(self.menu_button)
+        self.certs_button = Gtk.Button(icon_name="dialog-password-symbolic"); self.header_bar.pack_end(self.certs_button)
         self.sign_button = Gtk.Button(icon_name="document-edit-symbolic"); self.header_bar.pack_end(self.sign_button)
         self.sidebar = Sidebar(); self.flap.set_flap(self.sidebar)
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.SLIDE_UP_DOWN, vexpand=True); self.flap.set_content(self.stack)
@@ -35,8 +41,10 @@ class AppWindow(Adw.ApplicationWindow):
         self.welcome_view = WelcomeView(); self.stack.add_named(self.welcome_view, "welcome_view")
 
     def _connect_signals(self):
+        """Connects UI element signals to their corresponding handlers."""
         app = self.get_application()
         self.open_button.connect("clicked", lambda w: app.activate_action("open")); self.sign_button.connect("clicked", lambda w: app.activate_action("sign"))
+        self.certs_button.connect("clicked", lambda w: app.activate_action("manage_certs"))
         self.prev_page_button.connect("clicked", app.on_prev_page_clicked); self.next_page_button.connect("clicked", app.on_next_page_clicked)
         self.page_entry_button.connect("clicked", app.on_jump_to_page_clicked)
         self.sidebar_button.connect("toggled", self.on_sidebar_toggled); self.flap.connect("notify::reveal-flap", self.on_flap_reveal_changed)
@@ -48,19 +56,27 @@ class AppWindow(Adw.ApplicationWindow):
         self.add_controller(drop_target)
         
     def _on_file_drop(self, target, value, x, y):
+        """Handles a file drop event, opening the PDF if it's a valid file."""
         app = self.get_application()
         file = value.get_file()
         if file and file.get_path().lower().endswith(".pdf"): app.open_file_path(file.get_path()); return True
         return False
     
-    def on_sidebar_toggled(self, button): self.flap.set_reveal_flap(button.get_active())
-    def on_flap_reveal_changed(self, flap, param): self.sidebar_button.set_active(flap.get_reveal_flap())
+    def on_sidebar_toggled(self, button):
+        """Toggles the visibility of the sidebar flap when the button is clicked."""
+        self.flap.set_reveal_flap(button.get_active())
+
+    def on_flap_reveal_changed(self, flap, param):
+        """Synchronizes the sidebar toggle button's state with the flap's visibility."""
+        self.sidebar_button.set_active(flap.get_reveal_flap())
 
     def update_ui(self, app):
+        """Refreshes the entire window UI based on the application's current state."""
         self.welcome_view.update_ui(app); self.update_header_bar_state(app)
         self._build_and_set_menu(app); self.drawing_area.queue_draw()
             
     def update_header_bar_state(self, app):
+        """Updates the state (sensitivity, labels, tooltips) of the header bar widgets."""
         is_doc_loaded = app.doc is not None
         self.stack.set_visible_child_name("pdf_view" if is_doc_loaded else "welcome_view")
         self.sidebar_button.set_sensitive(is_doc_loaded)
@@ -77,7 +93,6 @@ class AppWindow(Adw.ApplicationWindow):
         if is_doc_loaded: self.page_entry_button.set_label(f"{app.current_page + 1} / {len(app.doc)}")
         else: self.page_entry_button.set_label("- / -")
 
-        # --- LÓGICA DE TOOLTIPS CORREGIDA ---
         can_sign = is_doc_loaded and app.signature_rect and app.active_cert_path
         self.sign_button.set_sensitive(can_sign)
         if can_sign:
@@ -91,8 +106,17 @@ class AppWindow(Adw.ApplicationWindow):
         self.prev_page_button.set_tooltip_text(app._("prev_page"))
         self.next_page_button.set_tooltip_text(app._("next_page"))
         self.page_entry_button.set_tooltip_text(app._("jump_to_page_title"))
+        self.sidebar_button.set_tooltip_text(app._("toggle_sidebar_tooltip"))
+
+        if app.active_cert_path:
+            cert_details = next((c for c in app.cert_manager.get_all_certificate_details() if c['path'] == app.active_cert_path), None)
+            if cert_details:
+                self.certs_button.set_tooltip_text(cert_details['subject_cn'])
+            else:
+                self.certs_button.set_tooltip_text(app._("manage_certificates_tooltip"))
 
     def _build_and_set_menu(self, app):
+        """Creates and sets the main application menu, including recent files."""
         menu = Gio.Menu.new(); menu.append(app._("open_pdf"), "app.open")
         recent_files = app.config.get_recent_files()
         if recent_files:
@@ -107,11 +131,13 @@ class AppWindow(Adw.ApplicationWindow):
         menu.append(app._("about"), "app.about"); self.menu_button.set_menu_model(menu)
         
     def _on_drawing_area_resize(self, area, width, height):
+        """Handles the resize event for the PDF drawing area, triggering a redraw."""
         app = self.get_application();
         if app.page: app.display_pixbuf = None
         GLib.idle_add(self.adjust_scroll_and_viewport)
 
     def adjust_scroll_and_viewport(self):
+        """Adjusts the scrollbar position after a resize to keep the content visible."""
         self.update_drawing_area_size_request()
         adj = self.scrolled_window.get_vadjustment()
         if adj:
@@ -119,6 +145,7 @@ class AppWindow(Adw.ApplicationWindow):
             if upper > page_size and adj.get_value() > upper - page_size: adj.set_value(upper - page_size)
 
     def update_drawing_area_size_request(self):
+        """Requests a new size for the drawing area to maintain the PDF's aspect ratio."""
         app = self.get_application()
         if not app.page: self.drawing_area.set_size_request(-1, -1); return
         width = self.drawing_area.get_width()
@@ -127,6 +154,7 @@ class AppWindow(Adw.ApplicationWindow):
             if abs(self.drawing_area.get_property("height-request") - int(target_h)) > 1: self.drawing_area.set_size_request(-1, int(target_h))
 
     def _draw_page_and_rect(self, drawing_area, cr, width, height):
+        """Draw callback for the main canvas; renders the PDF page and the signature rectangle."""
         app = self.get_application()
         if app.page and width > 0:
             if not app.display_pixbuf or app.display_pixbuf.get_width() != width:
@@ -155,8 +183,34 @@ class AppWindow(Adw.ApplicationWindow):
             cr.translate(final_x - (logical_rect.x * scale), final_y - (logical_rect.y * scale)); cr.scale(scale, scale)
             cr.set_source_rgb(0, 0, 0); PangoCairo.show_layout(cr, layout); cr.restore()
             
-    def show_toast(self, text, button_label=None, callback=None):
+    def _on_toast_dismissed(self, toast):
+        """
+        Callback for a toast's 'dismissed' signal.
+        This is the equivalent of 'dismissed_cb' in the C example. Its only job
+        is to remove our reference to the toast, allowing garbage collection.
+        """
+        if toast in self.active_toasts:
+            self.active_toasts.remove(toast)
+
+    def show_toast(self, text, button_label=None, callback=None, timeout=4):
+        """
+        Displays a short-lived notification toast, correctly managing its lifecycle
+        by holding a reference and using a manual GLib timer, as deduced from
+        the Adwaita source code.
+        """
         toast = Adw.Toast.new(text)
+        toast.connect("dismissed", self._on_toast_dismissed)
+
         if button_label and callback:
-            toast.set_button_label(button_label); toast.connect("button-clicked", lambda t: callback())
+            toast.set_button_label(button_label)
+            def on_button_clicked(t):
+                t.dismiss() 
+                callback()
+            toast.connect("button-clicked", on_button_clicked)
+        elif timeout > 0:
+            GLib.timeout_add_seconds(timeout, lambda: toast.dismiss() or GLib.SOURCE_REMOVE)
+
+        self.active_toasts.append(toast)
         self.toast_overlay.add_toast(toast)
+
+    

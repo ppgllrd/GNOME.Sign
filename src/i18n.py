@@ -1,7 +1,9 @@
 # i18n.py
 
 class I18NManager:
+    """A simple internationalization manager to handle string translations."""
     def __init__(self, initial_language="es"):
+        """Initializes the manager with a given language."""
         self.language = initial_language
         self.translations = {
             "es": {
@@ -28,7 +30,10 @@ class I18NManager:
                 "sign_button_tooltip_select_area": "Arrastre sobre el documento para seleccionar el área de la firma",
                 "sign_button_tooltip_sign": "Firmar el documento", 
                 "preferences": "Preferencias", "general": "General", "language": "Idioma", "certificates": "Certificados", "close_button": "Cerrar",
-                "toggle_sidebar_tooltip": "Mostrar/Ocultar panel lateral"
+                "toggle_sidebar_tooltip": "Mostrar/Ocultar panel lateral",
+                "toggle_sidebar_tooltip": "Mostrar/Ocultar panel lateral",
+                "manage_certificates_tooltip": "Gestionar certificados",
+                "toast_select_area": "Arrastre para seleccionar un área y pulse el botón de firma"
             },
             "en": {
                 "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
@@ -54,11 +59,21 @@ class I18NManager:
                 "sign_button_tooltip_select_area": "Drag on the document to select the signature area",
                 "sign_button_tooltip_sign": "Sign the document",
                 "preferences": "Preferences", "general": "General", "language": "Language", "certificates": "Certificates", "close_button": "Close",
-                "toggle_sidebar_tooltip": "Show/Hide sidebar"
+                "toggle_sidebar_tooltip": "Show/Hide sidebar",
+                "toggle_sidebar_tooltip": "Show/Hide sidebar",
+                "manage_certificates_tooltip": "Manage certificates",
+                "toast_select_area": "Drag to select an area and press the sign button"
             }
         }
 
     def set_language(self, lang_code):
+        """Sets the current language for translations."""
         if lang_code in self.translations: self.language = lang_code
-    def get_language(self): return self.language
-    def _(self, key): return self.translations.get(self.language, {}).get(key, key)
+
+    def get_language(self):
+        """Returns the current language code."""
+        return self.language
+
+    def _(self, key):
+        """Translates a key into the current language, falling back to the key itself."""
+        return self.translations.get(self.language, {}).get(key, key)
