@@ -1,22 +1,29 @@
 import gi
-gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1"); gi.require_version("Secret", "1")
-from gi.repository import Gtk, Adw, Gio, Secret, GLib, Pango, PangoCairo, GObject
-import fitz, os, sys, shutil, re
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+gi.require_version("Secret", "1")
+from gi.repository import Gtk, Adw, Gio, Secret, GLib, GObject
+import fitz, sys, os, re
 from datetime import datetime
-from html.parser import HTMLParser
+from cryptography import x509
+from pyhanko.pdf_utils.reader import PdfFileReader
+from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+from pyhanko.sign import signers, fields
+from pyhanko.sign.validation import validate_pdf_signature
+from pyhanko.sign.signers.pdf_signer import PdfSigner, PdfSignatureMetadata
+from pyhanko.keys.internal import (
+    translate_pyca_cryptography_key_to_asn1,
+    translate_pyca_cryptography_cert_to_asn1
+)
+from pyhanko_certvalidator import ValidationContext
+from pyhanko_certvalidator.registry import SimpleCertificateStore
+
 from i18n import I18NManager
 from certificate_manager import CertificateManager, KEYRING_SCHEMA
 from config_manager import ConfigManager
-from pyhanko.pdf_utils.reader import PdfFileReader
-from pyhanko.sign.validation import validate_pdf_signature
-from pyhanko_certvalidator import ValidationContext
-from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
-from pyhanko.sign import signers
-from pyhanko.sign.signers.pdf_signer import PdfSigner, PdfSignatureMetadata
-from pyhanko.keys.internal import translate_pyca_cryptography_key_to_asn1, translate_pyca_cryptography_cert_to_asn1
-from pyhanko_certvalidator.registry import SimpleCertificateStore
-from cryptography import x509
 from ui.dialogs import create_stamp_editor_dialog
+from stamp_creator import HtmlStamp, pango_to_html
+from pyhanko.stamp import StaticStampStyle
 
 class SignatureDetails:
     def __init__(self, pyhanko_sig, validation_status):
@@ -57,32 +64,6 @@ class SignatureDetails:
             self.sign_time = None
         if not self.sign_time and validation_status.timestamp_validity:
             self.sign_time = validation_status.timestamp_validity.timestamp
-
-class PangoToHtmlConverter(HTMLParser):
-    def __init__(self):
-        super().__init__(); self.html_parts = []; self.style_stack = [{}]
-    def get_current_styles(self): return self.style_stack[-1]
-    def handle_starttag(self, tag, attrs):
-        new_styles = self.get_current_styles().copy(); attrs_dict = dict(attrs)
-        if tag == 'b': new_styles['font-weight'] = 'bold'
-        elif tag == 'i': new_styles['font-style'] = 'italic'
-        elif tag == 'span':
-            if 'font_family' in attrs_dict: new_styles['font-family'] = f"'{attrs_dict['font_family']}'"
-            if 'color' in attrs_dict: new_styles['color'] = attrs_dict['color']
-            if 'size' in attrs_dict:
-                try: css_size = int(attrs_dict['size']) / Pango.SCALE; new_styles['font-size'] = f'{css_size:.1f}pt'
-                except (ValueError, TypeError): pass
-        self.style_stack.append(new_styles)
-    def handle_endtag(self, tag):
-        if len(self.style_stack) > 1: self.style_stack.pop()
-    def handle_data(self, data):
-        if not data: return
-        styles = self.get_current_styles(); style_str = "; ".join(f"{k}: {v}" for k, v in styles.items() if v)
-        escaped_data = GLib.markup_escape_text(data)
-        if style_str: self.html_parts.append(f'<span style="{style_str}">{escaped_data}</span>')
-        else: self.html_parts.append(escaped_data)
-    def get_html(self): return "".join(self.html_parts)
-
 
 class GnomeSign(Adw.Application):
     __gsignals__ = {
@@ -252,54 +233,86 @@ class GnomeSign(Adw.Application):
             self.config.set_language(new_lang)
             self.emit('language-changed') 
             self.update_ui()
-    
+
     def on_sign_document_clicked(self, action=None, param=None):
         """Handles the 'sign' action, performing the cryptographic signing process."""
         if not self.active_cert_path:
             if self.window: self.window.show_toast(self._("no_cert_selected_error")); return
         if not all([self.doc, self.signature_rect, self.current_file_path]):
             if self.window: self.window.show_toast(self._("need_pdf_and_area")); return
-        
+
         password = Secret.password_lookup_sync(KEYRING_SCHEMA, {"path": self.active_cert_path}, None)
         if not password:
             if self.window: self.window.show_toast(self._("credential_load_error")); return
-        private_key, certificate = self.cert_manager.get_credentials(self.active_cert_path, password)
-        if not (private_key and certificate):
+
+        private_key_pyca, certificate_pyca = self.cert_manager.get_credentials(self.active_cert_path, password)
+        if not (private_key_pyca and certificate_pyca):
             if self.window: self.window.show_toast(self._("credential_load_error")); return
 
+        signing_key_asn1 = translate_pyca_cryptography_key_to_asn1(private_key_pyca)
+        signer_cert_asn1 = translate_pyca_cryptography_cert_to_asn1(certificate_pyca)
+        
         output_path = self.current_file_path.replace(".pdf", "-signed.pdf")
         version = 1
         while os.path.exists(output_path):
             output_path = f"{os.path.splitext(self.current_file_path)[0]}-signed-{version}.pdf"; version += 1
-        
-        shutil.copyfile(self.current_file_path, output_path)
+
+        temp_stamp_file_path = None
         try:
-            self._apply_visual_stamp(output_path, certificate)
-            
             signer = signers.SimpleSigner(
-                translate_pyca_cryptography_cert_to_asn1(certificate), 
-                translate_pyca_cryptography_key_to_asn1(private_key), 
-                SimpleCertificateStore()
+                signing_cert=signer_cert_asn1,
+                signing_key=signing_key_asn1,
+                cert_registry=SimpleCertificateStore.from_certs([signer_cert_asn1])
             )
             
-            signer_cn_attrs = certificate.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)
-            signer_cn = signer_cn_attrs[0].value if signer_cn_attrs else str(certificate.subject)
+            x, y, w, h = self.signature_rect
+            view_width = self.window.drawing_area.get_width()
+            scale = self.page.rect.width / view_width if view_width > 0 else 1
+            fitz_rect = fitz.Rect(x * scale, y * scale, (x + w) * scale, (y + h) * scale)
+            
+            from stamp_creator import HtmlStamp, pango_to_html
+            from pyhanko.stamp import StaticStampStyle
+            
+            parsed_pango_text = self.get_parsed_stamp_text(certificate_pyca)
+            html_content = pango_to_html(parsed_pango_text)
+            
+            stamp_creator = HtmlStamp(
+                html_content=html_content,
+                width=fitz_rect.width,
+                height=fitz_rect.height
+            )
+            stamp_style, temp_stamp_file_path = stamp_creator.get_style_and_path()
+
+            field_name = f'Signature-{int(datetime.now().timestamp() * 1000)}'
 
             meta = PdfSignatureMetadata(
-                field_name=f'Signature-{int(datetime.now().timestamp() * 1000)}', 
-                reason=self._("sign_reason"), 
-                name=signer_cn
+                field_name=field_name,
+                reason=self._("sign_reason"),
+                location="GNOME Sign App",
+            )
+
+            page_height = self.page.rect.height
+
+            pdf_box_y0 = page_height - fitz_rect.y1
+            pdf_box_y1 = page_height - fitz_rect.y0
+
+            new_field_spec = fields.SigFieldSpec(
+                sig_field_name=field_name,
+                on_page=self.current_page,
+                box=(fitz_rect.x0, pdf_box_y0, fitz_rect.x1, pdf_box_y1)
             )
             
-            pdf_signer = PdfSigner(meta, signer)
+            pdf_signer = PdfSigner(
+                meta, 
+                signer, 
+                stamp_style=stamp_style,
+                new_field_spec=new_field_spec
+            )
             
-            with open(output_path, "rb+") as f:
-                writer = IncrementalPdfFileWriter(f, strict=False)
-                signed_bytes = pdf_signer.sign_pdf(writer)
-                f.seek(0)
-                f.write(signed_bytes.getbuffer())
-                f.truncate()
-            
+            with open(self.current_file_path, "rb") as orig_f, open(output_path, "wb") as out_f:
+                writer = IncrementalPdfFileWriter(orig_f, strict=False)
+                pdf_signer.sign_pdf(writer, output=out_f)
+
             if self.window: 
                 self.window.show_toast(
                     self._("sign_success_message").format(os.path.basename(output_path)), 
@@ -309,7 +322,10 @@ class GnomeSign(Adw.Application):
         except Exception as e:
             if self.window: self.window.show_toast(self._("sig_error_message").format(e))
             import traceback; traceback.print_exc()
- 
+        finally:
+            if temp_stamp_file_path and os.path.exists(temp_stamp_file_path):
+                os.unlink(temp_stamp_file_path)
+
     def on_about_clicked(self, action, param):
         dialog = Gtk.AboutDialog(transient_for=self.window, modal=True)
         dialog.set_program_name("GnomeSign"); dialog.set_version("1.0"); dialog.set_comments(self._("sign_reason"))
@@ -419,27 +435,6 @@ class GnomeSign(Adw.Application):
             format_pattern = date_match.group(1).replace("dd", "%d").replace("MM", "%m").replace("yyyy", "%Y").replace("yy", "%y").replace("HH", "%H").replace("mm", "%M").replace("ss", "%S")
             text = text.replace(date_match.group(0), datetime.now().strftime(format_pattern))
         return text
-
-    def _apply_visual_stamp(self, input_path, certificate):
-        """Applies the visual signature (stamp) to the PDF document."""
-        doc = fitz.open(input_path)
-        page = doc.load_page(self.current_page)
-        
-        view_width = self.window.drawing_area.get_width()
-        scale = page.rect.width / view_width if view_width > 0 else 1
-        
-        x, y, w, h = self.signature_rect
-        fitz_rect = fitz.Rect(x * scale, y * scale, (x + w) * scale, (y + h) * scale)
-        
-        parsed_pango_text = self.get_parsed_stamp_text(certificate)
-        converter = PangoToHtmlConverter()
-        converter.feed(parsed_pango_text.replace('\n', '<br/>'))
-        html_content = f"""<div style="width:100%;height:100%;display:table;text-align:center;line-height:1.2;"><div style="display:table-cell;vertical-align:middle;">{converter.get_html()}</div></div>"""
-        
-        page.insert_htmlbox(fitz_rect + (5, 5, -5, -5), html_content, rotate=0)
-        
-        doc.save(input_path, incremental=True, encryption=0)
-        doc.close()
 
 if __name__ == "__main__":
     app = GnomeSign()

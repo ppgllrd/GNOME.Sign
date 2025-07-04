@@ -1,6 +1,6 @@
 import gi
 gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1"); gi.require_version("PangoCairo", "1.0"); gi.require_version('GdkPixbuf', '2.0'); gi.require_version('Secret', '1')
-from gi.repository import Gtk, Adw, Gdk, Gio, GLib, Pango, PangoCairo, GdkPixbuf, Secret
+from gi.repository import Gtk, Adw, Gdk, Gio, GLib, GdkPixbuf, Secret
 import os, fitz
 
 class AppWindow(Adw.ApplicationWindow):
@@ -247,52 +247,55 @@ class AppWindow(Adw.ApplicationWindow):
     def _draw_page_and_rect(self, drawing_area, cr, width, height):
         """Draw callback for the main canvas; renders the PDF page and the signature rectangle."""
         app = self.get_application()
+
         if app.page and width > 0:
             if not app.display_pixbuf or app.display_pixbuf.get_width() != width:
                 zoom = width / app.page.rect.width
-                pix = app.page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+                matrix = fitz.Matrix(zoom, zoom)
+                pix = app.page.get_pixmap(matrix=matrix, alpha=False)
                 app.display_pixbuf = GdkPixbuf.Pixbuf.new_from_bytes(GLib.Bytes.new(pix.samples), GdkPixbuf.Colorspace.RGB, False, 8, pix.width, pix.height, pix.stride)
             Gdk.cairo_set_source_pixbuf(cr, app.display_pixbuf, 0, 0)
             cr.paint()
+        
         rect_to_draw = app.signature_rect or ((min(app.start_x, app.end_x), min(app.start_y, app.end_y), abs(app.end_x - app.start_x), abs(app.end_y - app.start_y)) if app.start_x != -1 else None)
-        if not rect_to_draw:
-            return
+        if not rect_to_draw: return
+
         x, y, w, h = rect_to_draw
+        
         if w < 5 or h < 5:
-            cr.set_source_rgba(0.0, 0.5, 0.0, 0.5)
-            cr.set_line_width(1.0)
-            cr.rectangle(x, y, w, h)
-            cr.fill()
+            cr.set_source_rgba(0.0, 0.5, 0.0, 0.5); cr.set_line_width(1.0); cr.rectangle(x, y, w, h); cr.fill()
             return
-        cr.set_source_rgb(0.0, 0.5, 0.0)
-        cr.set_line_width(1.5)
-        cr.rectangle(x, y, w, h)
-        cr.stroke_preserve()
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.8)
-        cr.fill()
+            
+        cr.set_source_rgb(0.0, 0.5, 0.0); cr.set_line_width(1.5); cr.rectangle(x, y, w, h); cr.stroke_preserve()
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.8); cr.fill()
+
         if w > 20 and h > 20 and app.active_cert_path:
             password = Secret.password_lookup_sync(app.cert_manager.KEYRING_SCHEMA, {"path": app.active_cert_path}, None)
-            if not password:
-                return
-            _, certificate = app.cert_manager.get_credentials(app.active_cert_path, password)
-            if not certificate:
-                return
-            cr.save()
-            layout = PangoCairo.create_layout(cr)
-            layout.set_width(Pango.units_from_double(w - 10))
-            layout.set_alignment(Pango.Alignment.CENTER)
-            markup_text = app.get_parsed_stamp_text(certificate)
-            layout.set_markup(markup_text, -1)
-            ink_rect, logical_rect = layout.get_pixel_extents()
-            scale = min((w - 10) / logical_rect.width if logical_rect.width > 0 else 1, (h - 10) / logical_rect.height if logical_rect.height > 0 else 1, 1.0)
-            final_width, final_height = logical_rect.width * scale, logical_rect.height * scale
-            final_x, final_y = x + (w - final_width) / 2, y + (h - final_height) / 2
-            cr.translate(final_x - (logical_rect.x * scale), final_y - (logical_rect.y * scale))
-            cr.scale(scale, scale)
-            cr.set_source_rgb(0, 0, 0)
-            PangoCairo.show_layout(cr, layout)
-            cr.restore()
+            if not password: return
             
+            _, certificate_pyca = app.cert_manager.get_credentials(app.active_cert_path, password)
+            if not certificate_pyca: return
+
+            from stamp_creator import HtmlStamp, pango_to_html
+
+            parsed_pango_text = app.get_parsed_stamp_text(certificate_pyca)
+            html_content = pango_to_html(parsed_pango_text)
+
+            view_width = self.drawing_area.get_width()
+            scale = app.page.rect.width / view_width if view_width > 0 else 1
+            
+            stamp_creator = HtmlStamp(
+                html_content=html_content,
+                width=w * scale,  
+                height=h * scale 
+            )
+            
+            stamp_pixbuf = stamp_creator.get_pixbuf(int(w), int(h))
+
+            if stamp_pixbuf:
+                Gdk.cairo_set_source_pixbuf(cr, stamp_pixbuf, x, y)
+                cr.paint()
+
     def _on_toast_dismissed(self, toast):
         """Callback for a toast's 'dismissed' signal."""
         if toast in self.active_toasts:
