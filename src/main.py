@@ -30,6 +30,10 @@ class SignatureDetails:
     def __init__(self, pyhanko_sig, validation_status, page_num, rect):
         self.pyhanko_sig = pyhanko_sig
         self.status = validation_status
+        self.intact = validation_status.intact
+        self.valid = validation_status.valid
+        self.trusted = validation_status.trusted
+        self.revoked = validation_status.revoked
         self.valid = validation_status.bottom_line
         self.signer_name = "Unknown"
         self.sign_time = None
@@ -197,17 +201,23 @@ class GnomeSign(Adw.Application):
         dialog = Adw.MessageDialog.new(self.window,
                                        heading=self._("sig_details_title"))
         
-        validity_text = f"<b>{self._('sig_validity_title')}</b>\n"
-        if sig_details.valid:
-            validity_text += f"<span color='green'>{self._('sig_validity_ok')}</span>"
+        validity_parts = [f"<b>{self._('sig_validity_title')}</b>"]
+        if sig_details.intact and sig_details.valid:
+            validity_parts.append(f"<span color='green'>{self._('sig_integrity_ok')}</span>")
+            if sig_details.trusted:
+                 validity_parts.append(f"<span color='green'>{self._('sig_trust_ok')}</span>")
+            elif sig_details.revoked:
+                 validity_parts.append(f"<span color='red'>{self._('sig_revoked')}</span>")
+            else:
+                 validity_parts.append(f"<span color='orange'>{self._('sig_trust_untrusted')}</span>")
         else:
-            validity_text += f"<span color='red'>{self._('sig_validity_error')}</span>"
+            validity_parts.append(f"<span color='red'>{self._('sig_integrity_error')}</span>")
+        validity_text = "\n".join(validity_parts)
         
         signer_esc = GLib.markup_escape_text(sig_details.signer_name)
         issuer_esc = GLib.markup_escape_text(sig_details.issuer_cn)
         serial_esc = GLib.markup_escape_text(sig_details.serial)
         
-        # --- INICIO CAMBIO: Construir el texto de detalles dinámicamente ---
         details_parts = [
             validity_text,
             f"<b>{self._('signer')}:</b> {signer_esc}",
@@ -231,8 +241,7 @@ class GnomeSign(Adw.Application):
             f"<b>{self._('serial')}:</b> {serial_esc}"
         ])
         details_text = "\n".join(details_parts)
-        # --- FIN CAMBIO ---
-
+        
         body_label = Gtk.Label()
         
         body_label.set_markup(details_text)

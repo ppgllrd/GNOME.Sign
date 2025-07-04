@@ -50,7 +50,12 @@ class I18NManager:
                 "page_thumbnails": "Miniaturas de página",
                 "signature_reason_label": "Razón",
                 "signature_location_label": "Ubicación",
-                "signature_contact_label": "Contacto"
+                "signature_contact_label": "Contacto",
+                "sig_integrity_ok": "La firma es criptográficamente válida y el documento no ha sido modificado.",
+                "sig_integrity_error": "La firma es inválida o el documento ha sido modificado.",
+                "sig_trust_ok": "El certificado del firmante es de confianza.",
+                "sig_trust_untrusted": "No se pudo establecer la confianza en el certificado del firmante.",
+                "sig_revoked": "El certificado del firmante ha sido revocado."
             },
             "en": {
                 "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
@@ -98,7 +103,12 @@ class I18NManager:
                 "page_thumbnails": "Page Thumbnails",
                 "signature_reason_label": "Reason",
                 "signature_location_label": "Location",
-                "signature_contact_label": "Contact"
+                "signature_contact_label": "Contact",
+                "sig_integrity_ok": "The signature is criptographically valid and the document has not been modified.",
+                "sig_integrity_error": "The signature is invalid or the document has been modified.",
+                "sig_trust_ok": "The signer's certificate is trusted.",
+                "sig_trust_untrusted": "Could not establish trust in the signer's certificate.",
+                "sig_revoked": "The signer's certificate has been revoked."
             }
         }
 
