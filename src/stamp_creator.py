@@ -21,6 +21,7 @@ def pango_to_html(pango_text: str) -> str:
         </div>
     </div>
     """
+    print(f"Converted Pango to HTML: {html_content}")  # Debugging output
     return full_html
 
 
@@ -30,25 +31,42 @@ class PangoToHtmlConverter(HTMLParser):
         self.font_map = {'sans': 'sans-serif', 'serif': 'serif', 'mono': 'monospace'}
         self.size_map = {'small': '8pt', 'normal': '10pt', 'large': '13pt', 'x-large': '16pt'}
     def get_current_styles(self) -> dict: return self.style_stack[-1]
+    
     def handle_starttag(self, tag, attrs):
-        new_styles = self.get_current_styles().copy(); attrs_dict = dict(attrs)
+        new_styles = self.get_current_styles().copy()
+        attrs_dict = dict(attrs)
         tag_lower = tag.lower()
-        if tag_lower == 'b': new_styles['font-weight'] = 'bold'
-        elif tag_lower == 'i': new_styles['font-style'] = 'italic'
-        elif tag_lower == 'u': new_styles['text-decoration'] = 'underline'
+
+        if tag_lower == 'b':
+            new_styles['font-weight'] = 'bold'
+        elif tag_lower == 'i':
+            new_styles['font-style'] = 'italic'
+        elif tag_lower == 'u':
+            new_styles['text-decoration'] = 'underline'
         elif tag_lower in ('span', 'font'):
-            font_family = attrs_dict.get('font_family');
-            if font_family: new_styles['font-family'] = self.font_map.get(font_family.lower(), font_family)
-            color = attrs_dict.get('color');
-            if color: new_styles['color'] = color
-            size = attrs_dict.get('size');
-            if size: new_styles['font-size'] = self.size_map.get(size.lower(), '10pt')
+            for attr, value in attrs_dict.items():
+                attr_lower = attr.lower()
+                if attr_lower == 'font_family':
+                    new_styles['font-family'] = self.font_map.get(value.lower(), value)
+                elif attr_lower in ('color', 'foreground'):
+                    new_styles['color'] = value
+                elif attr_lower == 'size':
+                    new_styles['font-size'] = self.size_map.get(value.lower(), '10pt')
+                elif attr_lower == 'weight':
+                    new_styles['font-weight'] = value
+                elif attr_lower == 'style':
+                    new_styles['font-style'] = value
+                elif attr_lower == 'underline':
+                    if value.lower() != 'none':
+                        new_styles['text-decoration'] = 'underline'
+        
         self.style_stack.append(new_styles)
+
     def handle_endtag(self, tag):
         if len(self.style_stack) > 1: self.style_stack.pop()
     def handle_data(self, data):
         if not data.strip(): self.html_parts.append(data); return
-        styles = self.get_current_styles(); escaped_data = data.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        styles = self.get_current_styles(); escaped_data = data.replace('&', '&').replace('<', '<').replace('>', '>')
         if styles: style_str = "; ".join(f"{k}: {v}" for k, v in styles.items()); self.html_parts.append(f'<span style="{style_str}">{escaped_data}</span>')
         else: self.html_parts.append(escaped_data)
     def get_html(self) -> str: return "".join(self.html_parts).replace('\n', '<br/>')
