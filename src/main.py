@@ -252,18 +252,12 @@ class GnomeSign(Adw.Application):
         signing_key_asn1 = translate_pyca_cryptography_key_to_asn1(private_key_pyca)
         signer_cert_asn1 = translate_pyca_cryptography_cert_to_asn1(certificate_pyca)
         
-        output_path = self.current_file_path.replace(".pdf", "-signed.pdf")
-        version = 1
+        output_path = self.current_file_path.replace(".pdf", "-signed.pdf"); version = 1
         while os.path.exists(output_path):
             output_path = f"{os.path.splitext(self.current_file_path)[0]}-signed-{version}.pdf"; version += 1
-
-        temp_stamp_file_path = None
+        
         try:
-            signer = signers.SimpleSigner(
-                signing_cert=signer_cert_asn1,
-                signing_key=signing_key_asn1,
-                cert_registry=SimpleCertificateStore.from_certs([signer_cert_asn1])
-            )
+            signer = signers.SimpleSigner(signing_cert=signer_cert_asn1, signing_key=signing_key_asn1, cert_registry=SimpleCertificateStore.from_certs([signer_cert_asn1]))
             
             x, y, w, h = self.signature_rect
             view_width = self.window.drawing_area.get_width()
@@ -271,7 +265,6 @@ class GnomeSign(Adw.Application):
             fitz_rect = fitz.Rect(x * scale, y * scale, (x + w) * scale, (y + h) * scale)
             
             from stamp_creator import HtmlStamp, pango_to_html
-            from pyhanko.stamp import StaticStampStyle
             
             parsed_pango_text = self.get_parsed_stamp_text(certificate_pyca)
             html_content = pango_to_html(parsed_pango_text)
@@ -281,7 +274,7 @@ class GnomeSign(Adw.Application):
                 width=fitz_rect.width,
                 height=fitz_rect.height
             )
-            stamp_style, temp_stamp_file_path = stamp_creator.get_style_and_path()
+            stamp_style = stamp_creator.get_style()
 
             field_name = f'Signature-{int(datetime.now().timestamp() * 1000)}'
 
@@ -292,7 +285,6 @@ class GnomeSign(Adw.Application):
             )
 
             page_height = self.page.rect.height
-
             pdf_box_y0 = page_height - fitz_rect.y1
             pdf_box_y1 = page_height - fitz_rect.y0
 
@@ -321,11 +313,8 @@ class GnomeSign(Adw.Application):
                 )
         except Exception as e:
             if self.window: self.window.show_toast(self._("sig_error_message").format(e))
-            import traceback; traceback.print_exc()
-        finally:
-            if temp_stamp_file_path and os.path.exists(temp_stamp_file_path):
-                os.unlink(temp_stamp_file_path)
-
+            traceback.print_exc()
+        
     def on_about_clicked(self, action, param):
         dialog = Gtk.AboutDialog(transient_for=self.window, modal=True)
         dialog.set_program_name("GnomeSign"); dialog.set_version("1.0"); dialog.set_comments(self._("sign_reason"))

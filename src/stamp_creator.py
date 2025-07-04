@@ -1,15 +1,15 @@
 # stamp_creator.py
-import fitz  # PyMuPDF
+import fitz
 import re
 from io import BytesIO
 from pyhanko.stamp import StaticStampStyle
-import tempfile
-import os
 from html.parser import HTMLParser
-import gi
-gi.require_version('GdkPixbuf', '2.0')
-from gi.repository import GdkPixbuf, GLib
-
+from pyhanko.pdf_utils import layout
+from pyhanko.pdf_utils.layout import AxisAlignment, Margins
+from pyhanko.pdf_utils.content import ImportedPdfPage
+from pyhanko.pdf_utils.reader import PdfFileReader
+import uuid 
+from binascii import hexlify 
 
 def pango_to_html(pango_text: str) -> str:
     converter = PangoToHtmlConverter(); converter.feed(pango_text)
@@ -53,6 +53,27 @@ class PangoToHtmlConverter(HTMLParser):
         else: self.html_parts.append(escaped_data)
     def get_html(self) -> str: return "".join(self.html_parts).replace('\n', '<br/>')
 
+class InMemoryPdfPage(ImportedPdfPage):
+    def __init__(self, pdf_bytes: bytes, page_ix=0):
+        self.name = hexlify(uuid.uuid4().bytes).decode('ascii')
+        super().__init__(self.name, page_ix=page_ix)
+        self.pdf_bytes = pdf_bytes
+
+    def render(self) -> bytes:
+        """
+        Override the render method to use the in-memory buffer.
+        IMPORTANT: We do not modify self.box. The size is already defined
+        by the container of the stamp (StaticContentStamp).
+        """
+        w = self._ensure_writer
+        r = PdfFileReader(BytesIO(self.pdf_bytes))
+        
+        xobj_ref = w.import_page_as_xobject(r, page_ix=self.page_ix)
+        
+        resource_name = b'/Import' + self.name.encode('ascii')
+        self.resources.xobject[resource_name.decode('ascii')] = xobj_ref
+
+        return resource_name + b' Do'
 
 class HtmlStamp:
     def __init__(self, html_content: str, width: float, height: float):
@@ -67,38 +88,33 @@ class HtmlStamp:
         temp_doc.close()
         return BytesIO(pdf_bytes)
 
-    def get_pixbuf(self, width: int, height: int) -> GdkPixbuf.Pixbuf:
-        """
-        Renders the PDF of the stamp in memory to a GdkPixbuf for preview.
-        """
-        if not self.pdf_buffer or width <= 0 or height <= 0:
-            return None
-        
+    def get_pixbuf(self, width: int, height: int):
+        if not self.pdf_buffer or width <= 0 or height <= 0: return None
         self.pdf_buffer.seek(0)
-        doc = fitz.open(stream=self.pdf_buffer.read(), filetype="pdf")
-        page = doc.load_page(0)
-
+        doc = fitz.open(stream=self.pdf_buffer.read(), filetype="pdf"); page = doc.load_page(0)
         zoom = width / page.rect.width
         matrix = fitz.Matrix(zoom, zoom)
         pix = page.get_pixmap(matrix=matrix, alpha=False)
-        
-        pixbuf = GdkPixbuf.Pixbuf.new_from_bytes(
-            GLib.Bytes.new(pix.samples),
-            GdkPixbuf.Colorspace.RGB,
-            False, 8, pix.width, pix.height, pix.stride
+        from gi.repository import GdkPixbuf, GLib # Importación local
+        pixbuf = GdkPixbuf.Pixbuf.new_from_bytes(GLib.Bytes.new(pix.samples), GdkPixbuf.Colorspace.RGB, False, 8, pix.width, pix.height, pix.stride)
+        doc.close(); return pixbuf
+
+    def get_style(self) -> StaticStampStyle:
+        """
+        Obtiene un StaticStampStyle de pyHanko a partir del PDF renderizado
+        directamente desde la memoria, asegurando que no tenga márgenes internos.
+        """
+        pdf_bytes = self.pdf_buffer.getvalue()
+        stamp_style_background = InMemoryPdfPage(pdf_bytes)
+
+        background_layout_rule = layout.SimpleBoxLayoutRule(
+            x_align=AxisAlignment.ALIGN_MID,
+            y_align=AxisAlignment.ALIGN_MID,
+            margins=Margins.uniform(0)  
         )
-        doc.close()
-        return pixbuf
-    
-    def get_style_and_path(self) -> tuple[StaticStampStyle, str]:
-        temp_file_path = None
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_f:
-                temp_file_path = temp_f.name
-                self.pdf_buffer.seek(0)
-                temp_f.write(self.pdf_buffer.read())
-            style = StaticStampStyle.from_pdf_file(temp_file_path, border_width=0)
-            return style, temp_file_path
-        finally:
-            if temp_file_path and os.path.exists(temp_file_path):
-                pass
+        
+        return StaticStampStyle(
+            background=stamp_style_background, 
+            border_width=0,
+            background_layout=background_layout_rule 
+        )
