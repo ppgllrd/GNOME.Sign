@@ -1,15 +1,16 @@
 import gi
-gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1"); gi.require_version('GdkPixbuf', '2.0')
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, GdkPixbuf, GLib, GObject, Adw
 import fitz
 
 THUMBNAIL_WIDTH = 120
 
-# --- INICIO CAMBIOS: REFACTOR COMPLETO DE LA CLASE ---
-class Sidebar(Gtk.Paned):
+class Sidebar(Gtk.Box):
     """
-    A sidebar widget that displays page thumbnails and a list of existing signatures
-    in two separate, resizable panes.
+    A sidebar widget that displays page thumbnails or a list of existing signatures,
+    switchable via a button group at the bottom.
     """
     __gsignals__ = { 
         'page-selected': (GObject.SignalFlags.RUN_FIRST, None, (int,)), 
@@ -17,25 +18,62 @@ class Sidebar(Gtk.Paned):
     }
     
     def __init__(self, **kwargs):
-        """Initializes the sidebar widget with a vertical Paned layout."""
+        """Initializes the sidebar widget with a vertical Box layout."""
         super().__init__(orientation=Gtk.Orientation.VERTICAL, **kwargs)
-        self.set_wide_handle(True)
+        
+        # --- Main View Stack ---
+        self.stack = Gtk.Stack()
+        self.stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
+        self.append(self.stack)
 
-        # Create top pane for page thumbnails
-        self.pages_scrolled_window = Gtk.ScrolledWindow(hscrollbar_policy="never", vscrollbar_policy="automatic")
-        self.set_start_child(self.pages_scrolled_window)
+        # --- Pages View ---
+        self.pages_scrolled_window = Gtk.ScrolledWindow(hscrollbar_policy="never", vscrollbar_policy="automatic", vexpand=True)
         self.pages_listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
         self.pages_listbox.connect("row-selected", self._on_page_row_selected)
         self.pages_scrolled_window.set_child(self.pages_listbox)
+        self.stack.add_named(self.pages_scrolled_window, "pages")
 
-        # Create bottom pane for signatures
-        self.signatures_scrolled_window = Gtk.ScrolledWindow(hscrollbar_policy="never", vscrollbar_policy="automatic")
-        self.set_end_child(self.signatures_scrolled_window)
+        # --- Signatures View ---
+        self.signatures_scrolled_window = Gtk.ScrolledWindow(hscrollbar_policy="never", vscrollbar_policy="automatic", vexpand=True)
         self.signatures_listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.signatures_scrolled_window.set_child(self.signatures_listbox)
+        self.stack.add_named(self.signatures_scrolled_window, "signatures")
         
+        # --- View Switcher Buttons ---
+        switcher_box = Gtk.Box()
+        switcher_box.get_style_context().add_class("linked")
+        switcher_box.set_halign(Gtk.Align.CENTER)
+        self.append(switcher_box)
+
+        self.pages_button = Gtk.ToggleButton(icon_name="view-paged-symbolic")
+        self.pages_button.connect("toggled", self._on_view_switched, "pages")
+        switcher_box.append(self.pages_button)
+
+        self.signatures_button = Gtk.ToggleButton(icon_name="security-high-symbolic")
+        self.signatures_button.set_group(self.pages_button)
+        self.signatures_button.connect("toggled", self._on_view_switched, "signatures")
+        switcher_box.append(self.signatures_button)
+
         self.block_signal = False
 
+        # --- INICIO CAMBIO ---
+        # Conectar al evento 'realize' para configurar los textos cuando el widget ya está en la ventana.
+        self.connect("realize", self._on_realize)
+        # --- FIN CAMBIO ---
+
+    # --- INICIO CAMBIO: NUEVO MÉTODO ---
+    def _on_realize(self, widget):
+        """Called when the widget is first realized (i.e., added to a toplevel window)."""
+        app = self.get_ancestor(Adw.ApplicationWindow).get_application()
+        self.pages_button.set_tooltip_text(app._("page_thumbnails"))
+        self.signatures_button.set_tooltip_text(app._("show_signatures_tooltip"))
+    # --- FIN CAMBIO ---
+    
+    def _on_view_switched(self, button, view_name):
+        """Callback to switch the visible child of the Gtk.Stack."""
+        if button.get_active():
+            self.stack.set_visible_child_name(view_name)
+    
     def populate(self, doc, signatures):
         """Fills the sidebar panes with page thumbnails and signature information."""
         # Clear previous content
@@ -45,7 +83,6 @@ class Sidebar(Gtk.Paned):
         while (row := self.signatures_listbox.get_row_at_index(0)):
             self.signatures_listbox.remove(row)
 
-        # Hide the entire pane if there's no document
         if not doc: 
             self.set_visible(False)
             return
@@ -77,9 +114,9 @@ class Sidebar(Gtk.Paned):
             row.set_child(item_box)
             self.pages_listbox.append(row)
 
-        # Populate signatures and control pane visibility
+        # Populate signatures and control switcher visibility
         if signatures:
-            self.signatures_scrolled_window.set_visible(True)
+            self.signatures_button.set_visible(True)
             for sig in signatures:
                 row = Adw.ActionRow.new()
                 row.set_title(sig.signer_name)
@@ -90,13 +127,19 @@ class Sidebar(Gtk.Paned):
                 row.add_prefix(icon)
                 row.connect("activated", self._on_signature_row_activated, sig)
                 self.signatures_listbox.append(row)
-            # Set initial position of the divider
-            self.set_position(self.get_height() - 200 if self.get_height() > 300 else self.get_height() // 2)
         else: 
-            self.signatures_scrolled_window.set_visible(False)
+            self.signatures_button.set_visible(False)
+
+        # Always default to showing pages, and ensure the button is active
+        self.pages_button.set_active(True)
+        self.stack.set_visible_child_name("pages")
             
     def select_page(self, page_num):
         """Programmatically selects a specific page in the thumbnail list and ensures it is visible."""
+        # Ensure the pages view is visible before selecting
+        self.stack.set_visible_child_name("pages")
+        self.pages_button.set_active(True)
+        
         self.block_signal = True
         row = self.pages_listbox.get_row_at_index(page_num)
         if row:
@@ -121,7 +164,9 @@ class Sidebar(Gtk.Paned):
 
     def focus_on_signatures(self):
         """Scrolls the view to make the list of signatures visible and gives it focus."""
-        if self.signatures_scrolled_window.is_visible():
+        if self.signatures_button.is_visible():
+            self.stack.set_visible_child_name("signatures")
+            self.signatures_button.set_active(True)
             self.signatures_listbox.grab_focus()
             adj = self.signatures_scrolled_window.get_vadjustment()
             if adj: 

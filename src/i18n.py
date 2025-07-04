@@ -47,7 +47,10 @@ class I18NManager:
                 "signature_location": "Ubicación de la firma (por defecto)",
                 "reason_placeholder": "Ej: De acuerdo con los términos",
                 "location_placeholder": "Ej: Madrid, España",
-                "page_thumbnails": "Miniaturas de página"
+                "page_thumbnails": "Miniaturas de página",
+                "signature_reason_label": "Razón",
+                "signature_location_label": "Ubicación",
+                "signature_contact_label": "Contacto"
             },
             "en": {
                 "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
@@ -92,7 +95,10 @@ class I18NManager:
                 "signature_location": "Default signing location",
                 "reason_placeholder": "e.g., I agree to the terms",
                 "location_placeholder": "e.g., Madrid, Spain",
-                "page_thumbnails": "Page Thumbnails"
+                "page_thumbnails": "Page Thumbnails",
+                "signature_reason_label": "Reason",
+                "signature_location_label": "Location",
+                "signature_contact_label": "Contact"
             }
         }
 

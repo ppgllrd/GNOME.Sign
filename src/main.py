@@ -1,5 +1,3 @@
-# gnomesign_app.py
-
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
@@ -40,6 +38,11 @@ class SignatureDetails:
         self.page_num = page_num
         self.rect = rect
         
+        sig_obj = pyhanko_sig.sig_object
+        self.reason = str(sig_obj.get('/Reason', ''))
+        self.location = str(sig_obj.get('/Location', ''))
+        self.contact_info = str(sig_obj.get('/ContactInfo', ''))
+       
         cert = getattr(validation_status, 'signer_cert', None)
         if not cert:
             cert = pyhanko_sig.signer_cert
@@ -190,7 +193,7 @@ class GnomeSign(Adw.Application):
                 self.highlight_rect = sig_details.rect
                 self.window.scroll_to_rect(sig_details.rect)
                 self.window.drawing_area.queue_draw()
-
+        
         dialog = Adw.MessageDialog.new(self.window,
                                        heading=self._("sig_details_title"))
         
@@ -204,17 +207,38 @@ class GnomeSign(Adw.Application):
         issuer_esc = GLib.markup_escape_text(sig_details.issuer_cn)
         serial_esc = GLib.markup_escape_text(sig_details.serial)
         
-        details_text = (f"{validity_text}\n\n"
-                        f"<b>{self._('signer')}:</b> {signer_esc}\n"
-                        f"<b>{self._('sign_date')}:</b> {sig_details.sign_time.strftime('%Y-%m-%d %H:%M:%S %Z') if sig_details.sign_time else 'N/A'}\n"
-                        f"<b>{self._('issuer')}:</b> {issuer_esc}\n"
-                        f"<b>{self._('serial')}:</b> {serial_esc}")
+        # --- INICIO CAMBIO: Construir el texto de detalles dinámicamente ---
+        details_parts = [
+            validity_text,
+            f"<b>{self._('signer')}:</b> {signer_esc}",
+            f"<b>{self._('sign_date')}:</b> {sig_details.sign_time.strftime('%Y-%m-%d %H:%M:%S %Z') if sig_details.sign_time else 'N/A'}"
+        ]
+        
+        if sig_details.reason:
+            reason_esc = GLib.markup_escape_text(sig_details.reason)
+            details_parts.append(f"<b>{self._('signature_reason_label')}:</b> {reason_esc}")
+
+        if sig_details.location:
+            location_esc = GLib.markup_escape_text(sig_details.location)
+            details_parts.append(f"<b>{self._('signature_location_label')}:</b> {location_esc}")
+            
+        if sig_details.contact_info:
+            contact_esc = GLib.markup_escape_text(sig_details.contact_info)
+            details_parts.append(f"<b>{self._('signature_contact_label')}:</b> {contact_esc}")
+
+        details_parts.extend([
+            f"\n<b>{self._('issuer')}:</b> {issuer_esc}",
+            f"<b>{self._('serial')}:</b> {serial_esc}"
+        ])
+        details_text = "\n".join(details_parts)
+        # --- FIN CAMBIO ---
 
         body_label = Gtk.Label()
         
         body_label.set_markup(details_text)
         body_label.set_wrap(True)
         body_label.set_justify(Gtk.Justification.CENTER) 
+        body_label.set_xalign(0)
         body_label.set_size_request(350, 0) 
         
         dialog.set_extra_child(body_label)
