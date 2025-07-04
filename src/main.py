@@ -70,6 +70,7 @@ class GnomeSign(Adw.Application):
         'language-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'certificates-changed': (GObject.SignalFlags.RUN_FIRST, None, ())
     }
+
     def __init__(self):
         super().__init__(application_id="org.pepeg.GnomeSign", flags=Gio.ApplicationFlags.HANDLES_OPEN)
         self.config = ConfigManager()
@@ -82,7 +83,9 @@ class GnomeSign(Adw.Application):
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
         self.window, self.stamp_editor_window, self.preferences_window = None, None, None
         self.signatures = []
+    
     def _(self, key): return self.i18n._(key)
+    
     def do_startup(self):
         Adw.Application.do_startup(self)
         self.config.load()
@@ -98,13 +101,17 @@ class GnomeSign(Adw.Application):
             self.quit()
             return True
         self.window.connect("close-request", on_window_close_request)
+    
     def on_certificates_changed(self, app): self.update_ui()
+    
     def do_activate(self):
         self.window.present()
         self.update_ui()
+    
     def do_open(self, files, n_files, hint):
         if n_files > 0 and files[0].get_path(): self.open_file_path(files[0].get_path())
         self.do_activate()
+    
     def _build_actions(self):
         actions_with_params = [("open_recent", self.on_open_recent_clicked, "s"), ("change_lang", self.on_lang_change_state, 's', self.i18n.get_language())]
         for name, callback, p_type, *state in actions_with_params:
@@ -146,6 +153,7 @@ class GnomeSign(Adw.Application):
         except Exception as e:
             if self.window: self.window.show_toast(self._("open_pdf_error").format(e))
             self.doc = None; self.signatures = []; self.update_ui()
+
     def on_show_signatures_clicked(self, action, param):
         if self.window:
             if not self.window.flap.get_reveal_flap():
@@ -220,11 +228,17 @@ class GnomeSign(Adw.Application):
         page_name = None
         if action.get_name() == 'manage_certs': page_name = 'certificates'
         from ui.preferences_window import PreferencesWindow
-        self.preferences_window = PreferencesWindow(application=self, transient_for=self.window, initial_page_name=page_name)
-        self.preferences_window.connect("destroy", self.on_preferences_window_destroyed)
+        self.preferences_window = PreferencesWindow(
+            application=self, 
+            transient_for=self.window, 
+            initial_page_name=page_name
+        )
+        self.preferences_window.connect("close-request", self.on_preferences_close_request)
         self.preferences_window.present()
 
-    def on_preferences_window_destroyed(self, widget): self.preferences_window = None
+    def on_preferences_close_request(self, widget):
+        self.preferences_window = None
+
     def on_edit_stamps_clicked(self, action, param): create_stamp_editor_dialog(self.window, self, self.config)
     def on_lang_change_state(self, action, value):
         new_lang = value.get_string()
@@ -278,11 +292,19 @@ class GnomeSign(Adw.Application):
 
             field_name = f'Signature-{int(datetime.now().timestamp() * 1000)}'
 
-            meta = PdfSignatureMetadata(
-                field_name=field_name,
-                reason=self._("sign_reason"),
-                location="GNOME Sign App",
-            )
+            meta_kwargs = {'field_name': field_name}
+            
+            # Leemos la razón desde la configuración
+            reason = self.config.get_signature_reason()
+            if reason:
+                meta_kwargs['reason'] = reason
+            
+            # Leemos la ubicación desde la configuración
+            location = self.config.get_signature_location()
+            if location:
+                meta_kwargs['location'] = location
+
+            meta = PdfSignatureMetadata(**meta_kwargs)
 
             page_height = self.page.rect.height
             pdf_box_y0 = page_height - fitz_rect.y1

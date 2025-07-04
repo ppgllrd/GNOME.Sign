@@ -28,7 +28,7 @@ class PangoToHtmlConverter(HTMLParser):
     def __init__(self):
         super().__init__(); self.html_parts = []; self.style_stack = [{}]
         self.font_map = {'sans': 'sans-serif', 'serif': 'serif', 'mono': 'monospace'}
-        self.size_map = {'small': '8pt', 'normal': '10pt', 'large': '12pt', 'x-large': '14pt', 'extra large': '14pt'}
+        self.size_map = {'small': '8pt', 'normal': '10pt', 'large': '13pt', 'x-large': '16pt'}
     def get_current_styles(self) -> dict: return self.style_stack[-1]
     def handle_starttag(self, tag, attrs):
         new_styles = self.get_current_styles().copy(); attrs_dict = dict(attrs)
@@ -48,7 +48,7 @@ class PangoToHtmlConverter(HTMLParser):
         if len(self.style_stack) > 1: self.style_stack.pop()
     def handle_data(self, data):
         if not data.strip(): self.html_parts.append(data); return
-        styles = self.get_current_styles(); escaped_data = data.replace('&', '&').replace('<', '<').replace('>', '>')
+        styles = self.get_current_styles(); escaped_data = data.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         if styles: style_str = "; ".join(f"{k}: {v}" for k, v in styles.items()); self.html_parts.append(f'<span style="{style_str}">{escaped_data}</span>')
         else: self.html_parts.append(escaped_data)
     def get_html(self) -> str: return "".join(self.html_parts).replace('\n', '<br/>')
@@ -95,14 +95,14 @@ class HtmlStamp:
         zoom = width / page.rect.width
         matrix = fitz.Matrix(zoom, zoom)
         pix = page.get_pixmap(matrix=matrix, alpha=False)
-        from gi.repository import GdkPixbuf, GLib # Importación local
+        from gi.repository import GdkPixbuf, GLib 
         pixbuf = GdkPixbuf.Pixbuf.new_from_bytes(GLib.Bytes.new(pix.samples), GdkPixbuf.Colorspace.RGB, False, 8, pix.width, pix.height, pix.stride)
         doc.close(); return pixbuf
 
     def get_style(self) -> StaticStampStyle:
         """
-        Obtiene un StaticStampStyle de pyHanko a partir del PDF renderizado
-        directamente desde la memoria, asegurando que no tenga márgenes internos.
+        Gets a StaticStampStyle from pyHanko based on the PDF rendered
+        directly from memory, ensuring it has no internal margins.
         """
         pdf_bytes = self.pdf_buffer.getvalue()
         stamp_style_background = InMemoryPdfPage(pdf_bytes)

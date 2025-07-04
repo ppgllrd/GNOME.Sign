@@ -41,7 +41,12 @@ class I18NManager:
                 "signer": "Firmante",
                 "sign_date": "Fecha de Firma",
                 "go_to_signatures": "Ver Firmas",
-                "show_signatures_tooltip": "Mostrar firmas existentes en el documento"
+                "show_signatures_tooltip": "Mostrar firmas existentes en el documento",
+                "signature_settings": "Ajustes de Firma",
+                "signature_reason": "Razón para la firma (por defecto)",
+                "signature_location": "Ubicación de la firma (por defecto)",
+                "reason_placeholder": "Ej: De acuerdo con los términos",
+                "location_placeholder": "Ej: Madrid, España"
             },
             "en": {
                 "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
@@ -80,7 +85,12 @@ class I18NManager:
                 "signer": "Signer",
                 "sign_date": "Signature Date",
                 "go_to_signatures": "View Signatures",
-                "show_signatures_tooltip": "Show existing signatures in the document"
+                "show_signatures_tooltip": "Show existing signatures in the document",
+                "signature_settings": "Signature Settings",
+                "signature_reason": "Default signing reason",
+                "signature_location": "Default signing location",
+                "reason_placeholder": "e.g., I agree to the terms",
+                "location_placeholder": "e.g., Madrid, Spain",
             }
         }
 

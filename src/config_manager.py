@@ -24,7 +24,9 @@ class ConfigManager:
         defaults = {
             'certificates': [], 'recent_files': [], 'signature_templates': [],
             'active_template_id': None, 'last_folder': os.path.expanduser("~"),
-            'language': "es", 'active_cert_path': None
+            'language': "es", 'active_cert_path': None,
+            'signature_reason': '', 
+            'signature_location': '' 
         }
         for key, value in defaults.items(): self.config_data.setdefault(key, value)
         self._create_default_templates_if_needed()
@@ -130,3 +132,19 @@ class ConfigManager:
     def set_language(self, lang_code):
         """Sets the application language and saves the configuration."""
         self.config_data["language"] = lang_code; self.save()
+    
+    def get_signature_reason(self):
+        """Returns the default signature reason."""
+        return self.config_data.get("signature_reason", "")
+
+    def set_signature_reason(self, reason):
+        """Sets the default signature reason."""
+        self.config_data["signature_reason"] = reason
+
+    def get_signature_location(self):
+        """Returns the default signature location."""
+        return self.config_data.get("signature_location", "")
+
+    def set_signature_location(self, location):
+        """Sets the default signature location."""
+        self.config_data["signature_location"] = location
