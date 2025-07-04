@@ -321,12 +321,12 @@ class AppWindow(Adw.ApplicationWindow):
                 view_w = (x1 - x0) * scale_factor
                 view_h = (y1 - y0) * scale_factor
 
-                cr.set_source_rgba(0.1, 0.4, 0.8, 0.4) 
+                cr.set_source_rgba(1.0, 1.0, 0.0, 0.25) 
                 cr.rectangle(view_x, view_y, view_w, view_h)
                 cr.fill()
                 
-                cr.set_source_rgb(0.0, 0.0, 1.0) 
-                cr.set_line_width(2.0)
+                cr.set_source_rgb(0.9, 0.8, 0.0)  
+                cr.set_line_width(1.0)
                 cr.rectangle(view_x, view_y, view_w, view_h)
                 cr.stroke()
         
