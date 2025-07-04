@@ -21,7 +21,6 @@ def pango_to_html(pango_text: str) -> str:
         </div>
     </div>
     """
-    print(f"Converted Pango to HTML: {html_content}")  # Debugging output
     return full_html
 
 
