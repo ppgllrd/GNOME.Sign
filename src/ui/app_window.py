@@ -1,3 +1,5 @@
+# ui/app_window.py
+
 import gi
 gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1"); gi.require_version("PangoCairo", "1.0"); gi.require_version('GdkPixbuf', '2.0'); gi.require_version('Secret', '1')
 from gi.repository import Gtk, Adw, Gdk, Gio, GLib, GdkPixbuf, Secret
@@ -108,11 +110,17 @@ class AppWindow(Adw.ApplicationWindow):
         self.sidebar.connect("page-selected", lambda sb, page_num: app.display_page(page_num))
         self.drawing_area.set_draw_func(self._draw_page_and_rect)
         self.drawing_area.connect("resize", self._on_drawing_area_resize)
+        
         drag = Gtk.GestureDrag.new()
         drag.connect("drag-begin", app.on_drag_begin)
         drag.connect("drag-update", app.on_drag_update)
         drag.connect("drag-end", app.on_drag_end)
         self.drawing_area.add_controller(drag)
+
+        click_gesture = Gtk.GestureClick.new()
+        click_gesture.connect("released", self._on_drawing_area_click)
+        self.drawing_area.add_controller(click_gesture)
+
         drop_target = Gtk.DropTarget.new(type=Gio.File, actions=Gdk.DragAction.COPY)
         drop_target.connect("drop", self._on_file_drop)
         self.add_controller(drop_target)
@@ -137,6 +145,13 @@ class AppWindow(Adw.ApplicationWindow):
             return True
         return False
     
+    def _on_drawing_area_click(self, gesture, n_press, x, y):
+        """Handles a click on the drawing area to clear any highlights."""
+        app = self.get_application()
+        if app.highlight_rect:
+            app.highlight_rect = None
+            self.drawing_area.queue_draw()
+
     def on_sidebar_toggled(self, button):
         """Toggles the visibility of the sidebar flap when the button is clicked."""
         self.flap.set_reveal_flap(button.get_active())
@@ -244,6 +259,42 @@ class AppWindow(Adw.ApplicationWindow):
             if abs(self.drawing_area.get_property("height-request") - int(target_h)) > 1:
                 self.drawing_area.set_size_request(-1, int(target_h))
 
+    def scroll_to_rect(self, pdf_rect):
+        """Schedules a scroll operation to bring the specified PDF rectangle into view."""
+        def _do_scroll():
+            app = self.get_application()
+            if not app.page or not pdf_rect:
+                return GLib.SOURCE_REMOVE
+
+            vadjustment = self.scrolled_window.get_vadjustment()
+            if not vadjustment:
+                return GLib.SOURCE_REMOVE
+
+            view_width = self.drawing_area.get_width()
+            if view_width <= 0 or app.page.rect.width <= 0:
+                return GLib.SOURCE_REMOVE
+
+            scale_factor = view_width / app.page.rect.width
+            page_height_pdf = app.page.rect.height
+            _, y0, _, y1 = pdf_rect
+
+            # Convert PDF coordinates to view coordinates
+            view_y = (page_height_pdf - y1) * scale_factor
+            view_h = (y1 - y0) * scale_factor
+
+            # Calculate target position to center the rectangle
+            viewport_height = vadjustment.get_page_size()
+            target_pos = view_y + view_h / 2 - viewport_height / 2
+
+            # Clamp the position to be within the valid range
+            upper_bound = vadjustment.get_upper() - viewport_height
+            clamped_pos = max(0, min(target_pos, upper_bound))
+
+            vadjustment.set_value(clamped_pos)
+            return GLib.SOURCE_REMOVE
+
+        GLib.idle_add(_do_scroll)
+
     def _draw_page_and_rect(self, drawing_area, cr, width, height):
         """Draw callback for the main canvas; renders the PDF page and the signature rectangle."""
         app = self.get_application()
@@ -256,6 +307,28 @@ class AppWindow(Adw.ApplicationWindow):
                 app.display_pixbuf = GdkPixbuf.Pixbuf.new_from_bytes(GLib.Bytes.new(pix.samples), GdkPixbuf.Colorspace.RGB, False, 8, pix.width, pix.height, pix.stride)
             Gdk.cairo_set_source_pixbuf(cr, app.display_pixbuf, 0, 0)
             cr.paint()
+            
+        if app.highlight_rect:
+            if app.page and width > 0:
+                scale_factor = width / app.page.rect.width
+                pdf_rect = app.highlight_rect
+                
+                page_height_pdf = app.page.rect.height
+                x0, y0, x1, y1 = pdf_rect
+                
+                view_x = x0 * scale_factor
+                view_y = (page_height_pdf - y1) * scale_factor
+                view_w = (x1 - x0) * scale_factor
+                view_h = (y1 - y0) * scale_factor
+
+                cr.set_source_rgba(0.1, 0.4, 0.8, 0.4) 
+                cr.rectangle(view_x, view_y, view_w, view_h)
+                cr.fill()
+                
+                cr.set_source_rgb(0.0, 0.0, 1.0) 
+                cr.set_line_width(2.0)
+                cr.rectangle(view_x, view_y, view_w, view_h)
+                cr.stroke()
         
         rect_to_draw = app.signature_rect or ((min(app.start_x, app.end_x), min(app.start_y, app.end_y), abs(app.end_x - app.start_x), abs(app.end_y - app.start_y)) if app.start_x != -1 else None)
         if not rect_to_draw: return

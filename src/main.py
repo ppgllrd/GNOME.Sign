@@ -1,10 +1,12 @@
+# gnomesign_app.py
+
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Secret", "1")
 from gi.repository import Gtk, Adw, Gio, Secret, GLib, GObject
 import fitz, sys, os, re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from cryptography import x509
 from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
@@ -17,6 +19,7 @@ from pyhanko.keys.internal import (
 )
 from pyhanko_certvalidator import ValidationContext
 from pyhanko_certvalidator.registry import SimpleCertificateStore
+from pyhanko.pdf_utils.generic import ArrayObject
 
 from i18n import I18NManager
 from certificate_manager import CertificateManager, KEYRING_SCHEMA
@@ -26,7 +29,7 @@ from stamp_creator import HtmlStamp, pango_to_html
 from pyhanko.stamp import StaticStampStyle
 
 class SignatureDetails:
-    def __init__(self, pyhanko_sig, validation_status):
+    def __init__(self, pyhanko_sig, validation_status, page_num, rect):
         self.pyhanko_sig = pyhanko_sig
         self.status = validation_status
         self.valid = validation_status.bottom_line
@@ -34,6 +37,9 @@ class SignatureDetails:
         self.sign_time = None
         self.issuer_cn = "Unknown"
         self.serial = "Unknown"
+        self.page_num = page_num
+        self.rect = rect
+        
         cert = getattr(validation_status, 'signer_cert', None)
         if not cert:
             cert = pyhanko_sig.signer_cert
@@ -81,6 +87,7 @@ class GnomeSign(Adw.Application):
         self.signature_rect, self.is_dragging_rect = None, False
         self.drag_offset_x, self.drag_offset_y = 0, 0
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
+        self.highlight_rect = None
         self.window, self.stamp_editor_window, self.preferences_window = None, None, None
         self.signatures = []
     
@@ -127,6 +134,7 @@ class GnomeSign(Adw.Application):
         ]
         for name, callback in simple_actions:
             action = Gio.SimpleAction.new(name, None); action.connect("activate", callback); self.add_action(action)
+
     def open_file_path(self, file_path, show_toast=True):
         try:
             if not os.path.exists(file_path): raise FileNotFoundError(f"File not found: {file_path}")
@@ -136,9 +144,22 @@ class GnomeSign(Adw.Application):
                 with open(file_path, 'rb') as f:
                     r = PdfFileReader(f, strict=False)
                     vc = ValidationContext(allow_fetching=True) 
+                    pages = list(r.root['/Pages']['/Kids'])
                     for sig in r.embedded_signatures:
-                        status = validate_pdf_signature(sig, vc, skip_diff=True)
-                        self.signatures.append(SignatureDetails(sig, status))
+                        try:
+                            page_ref = sig.sig_field.get('/P')
+                            page_num = pages.index(page_ref)
+                            
+                            rect = sig.sig_field.get('/Rect')
+                            if isinstance(rect, ArrayObject):
+                                rect = [float(v) for v in rect]
+                            
+                            status = validate_pdf_signature(sig, vc, skip_diff=True)
+                            self.signatures.append(SignatureDetails(sig, status, page_num, rect))
+                        except (ValueError, KeyError) as e:
+                            print(f"Could not locate signature '{sig.field_name}': {e}")
+                            status = validate_pdf_signature(sig, vc, skip_diff=True)
+                            self.signatures.append(SignatureDetails(sig, status, -1, None))
             except Exception as e:
                 print(f"Could not analyze for signatures: {e}")
             self.current_file_path = file_path; self.doc = fitz.open(file_path); self.current_page = 0
@@ -163,6 +184,12 @@ class GnomeSign(Adw.Application):
             
     def on_signature_selected(self, sidebar, sig_details):
         """Handles a click on a signature in the sidebar, showing a details dialog."""
+        if sig_details.page_num != -1 and sig_details.rect:
+            self.display_page(sig_details.page_num)
+            self.highlight_rect = sig_details.rect
+            if self.window: 
+                self.window.scroll_to_rect(sig_details.rect)
+                self.window.drawing_area.queue_draw()
         
         dialog = Adw.MessageDialog.new(self.window,
                                        heading=self._("sig_details_title"))
@@ -294,12 +321,10 @@ class GnomeSign(Adw.Application):
 
             meta_kwargs = {'field_name': field_name}
             
-            # Leemos la razón desde la configuración
             reason = self.config.get_signature_reason()
             if reason:
                 meta_kwargs['reason'] = reason
             
-            # Leemos la ubicación desde la configuración
             location = self.config.get_signature_location()
             if location:
                 meta_kwargs['location'] = location
@@ -335,6 +360,7 @@ class GnomeSign(Adw.Application):
                 )
         except Exception as e:
             if self.window: self.window.show_toast(self._("sig_error_message").format(e))
+            import traceback
             traceback.print_exc()
         
     def on_about_clicked(self, action, param):
@@ -353,6 +379,7 @@ class GnomeSign(Adw.Application):
         self.signature_rect = None
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
         self.is_dragging_rect = False
+        self.highlight_rect = None
         if self.window: self.window.sign_button.set_sensitive(False)
 
     def display_page(self, page_num):
@@ -391,6 +418,7 @@ class GnomeSign(Adw.Application):
         dialog.connect("response", on_response); dialog.present()
 
     def on_drag_begin(self, gesture, start_x, start_y):
+        self.highlight_rect = None
         if self.signature_rect:
             x, y, w, h = self.signature_rect
             if x <= start_x <= x + w and y <= start_y <= y + h:
