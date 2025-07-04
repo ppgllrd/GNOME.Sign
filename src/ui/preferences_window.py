@@ -27,6 +27,12 @@ class PreferencesWindow(Adw.PreferencesWindow):
         if initial_page_name:
             self.set_visible_page_name(initial_page_name) 
 
+
+        self.connect("destroy", self.on_preferences_window_destroyed)
+        
+    def on_preferences_window_destroyed(self, widget):
+        print("Preferences window closed") 
+
     def _on_certificates_changed(self, app): 
         """Callback for the 'certificates-changed' signal."""
         self.update_ui()
@@ -47,6 +53,17 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.lang_row.set_selected(0 if current_lang_code == "es" else 1)
         self.lang_row.connect("notify::selected", self._on_language_changed_selection)
         self.lang_group.add(self.lang_row)
+
+        self.signing_group = Adw.PreferencesGroup.new()
+        self.page_general.add(self.signing_group)
+
+        self.reason_row = Adw.EntryRow.new()
+        self.reason_row.connect("notify::text", self._on_reason_changed)
+        self.signing_group.add(self.reason_row)
+
+        self.location_row = Adw.EntryRow.new()
+        self.location_row.connect("notify::text", self._on_location_changed)
+        self.signing_group.add(self.location_row)
         
         self.certs_page = Adw.PreferencesPage.new()
         self.certs_page.set_name("certificates") 
@@ -59,6 +76,11 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.page_general.set_icon_name("preferences-system-symbolic")
         self.lang_group.set_title(self.i18n._("language"))
         self.lang_row.set_title(self.i18n._("language"))
+        self.signing_group.set_title(self.i18n._("signature_settings"))
+        self.reason_row.set_title(self.i18n._("signature_reason"))
+        self.reason_row.set_tooltip_text(self.i18n._("reason_placeholder"))
+        self.location_row.set_title(self.i18n._("signature_location"))
+        self.location_row.set_tooltip_text(self.i18n._("location_placeholder"))
         self.certs_page.set_title(self.i18n._("certificates"))
         self.certs_page.set_icon_name("dialog-password-symbolic")
         self.update_ui() # Re-build the dynamic certificate list with new translations
@@ -81,6 +103,9 @@ class PreferencesWindow(Adw.PreferencesWindow):
         
         self.certs_group = Adw.PreferencesGroup()
         self.certs_page.add(self.certs_group)
+
+        self.reason_row.set_text(self.app.config.get_signature_reason())
+        self.location_row.set_text(self.app.config.get_signature_location())
         
         cert_details_list = self.app.cert_manager.get_all_certificate_details()
         radio_group = None
@@ -193,3 +218,13 @@ class PreferencesWindow(Adw.PreferencesWindow):
             on_password_response(password_entry.get_text() if res == Gtk.ResponseType.OK else None)
             d.destroy()
         dialog.connect("response", on_response); dialog.present()
+
+    def _on_reason_changed(self, entry_row, param):
+        """Saves the reason when it's changed by the user."""
+        self.app.config.set_signature_reason(entry_row.get_text())
+        self.app.config.save()
+
+    def _on_location_changed(self, entry_row, param):
+        """Saves the location when it's changed by the user."""
+        self.app.config.set_signature_location(entry_row.get_text())
+        self.app.config.save()
