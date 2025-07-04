@@ -184,13 +184,13 @@ class GnomeSign(Adw.Application):
             
     def on_signature_selected(self, sidebar, sig_details):
         """Handles a click on a signature in the sidebar, showing a details dialog."""
-        if sig_details.page_num != -1 and sig_details.rect:
-            self.display_page(sig_details.page_num)
-            self.highlight_rect = sig_details.rect
-            if self.window: 
+        if sig_details.page_num != -1:
+            self.display_page(sig_details.page_num, keep_sidebar_view=True)
+            if sig_details.rect and self.window:
+                self.highlight_rect = sig_details.rect
                 self.window.scroll_to_rect(sig_details.rect)
                 self.window.drawing_area.queue_draw()
-        
+
         dialog = Adw.MessageDialog.new(self.window,
                                        heading=self._("sig_details_title"))
         
@@ -382,7 +382,9 @@ class GnomeSign(Adw.Application):
         self.highlight_rect = None
         if self.window: self.window.sign_button.set_sensitive(False)
 
-    def display_page(self, page_num):
+    def display_page(self, page_num, keep_sidebar_view=False):
+        if self.highlight_rect:
+            self.highlight_rect = None
         if not self.doc or not (0 <= page_num < len(self.doc)):
             self.page, self.doc, self.current_file_path, self.display_pixbuf = None, None, None, None
             self.signatures = []
@@ -392,7 +394,8 @@ class GnomeSign(Adw.Application):
             self.window.update_header_bar_state(self)
             self.window.drawing_area.queue_draw()
             GLib.idle_add(self.window.adjust_scroll_and_viewport)
-            self.window.sidebar.select_page(page_num)
+            if not keep_sidebar_view:
+                self.window.sidebar.select_page(page_num)
     
     def on_prev_page_clicked(self, button):
         if self.doc and self.current_page > 0:
