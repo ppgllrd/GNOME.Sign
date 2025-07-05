@@ -5,7 +5,7 @@ gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, GdkPixbuf, GLib, GObject, Adw
 import fitz
 
-THUMBNAIL_WIDTH = 120
+THUMBNAIL_WIDTH = 150
 
 class Sidebar(Gtk.Box):
     """
