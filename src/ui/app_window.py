@@ -102,12 +102,10 @@ class AppWindow(Adw.ApplicationWindow):
         drag = Gtk.GestureDrag.new(); drag.connect("drag-begin", app.on_drag_begin); drag.connect("drag-update", app.on_drag_update); drag.connect("drag-end", app.on_drag_end)
         self.drawing_area.add_controller(drag)
         
-        # --- INICIO CAMBIO: Modificar on_drawing_area_click para abrir el diálogo ---
         click_gesture = Gtk.GestureClick.new()
-        click_gesture.connect("released", self._on_drawing_area_click) # Conecta al método que gestionará el click
+        click_gesture.connect("released", self._on_drawing_area_click) 
         self.drawing_area.add_controller(click_gesture)
-        # --- FIN CAMBIO ---
-
+        
         drop_target = Gtk.DropTarget.new(type=Gio.File, actions=Gdk.DragAction.COPY); drop_target.connect("drop", self._on_file_drop)
         self.add_controller(drop_target)
         
@@ -137,7 +135,6 @@ class AppWindow(Adw.ApplicationWindow):
         """
         app = self.get_application()
 
-        # Primero, intentar detectar si el clic fue en una firma
         found_sig_details = None
         for rect, sig_details in self.signature_view_rects:
             if rect.contains_point(x, y):
@@ -145,14 +142,8 @@ class AppWindow(Adw.ApplicationWindow):
                 break
 
         if found_sig_details:
-            # Si se hizo clic en una firma, abrir el diálogo de detalles.
-            # Reutilizamos el método existente en la aplicación.
-            # app.on_signature_selected toma el sidebar como primer arg, podemos pasar self.sidebar (que es un Gtk.Box)
-            # o simplemente None si ese argumento no se usa críticamente más allá de la señal de GObject.
-            # Para mayor compatibilidad con la firma de la señal, pasamos self.sidebar.
             app.on_signature_selected(self.sidebar, found_sig_details)
         else:
-            # Si no se hizo clic en una firma, limpiar cualquier resaltado existente
             if app.highlight_rect:
                 app.highlight_rect = None
                 self.drawing_area.queue_draw()
@@ -257,7 +248,7 @@ class AppWindow(Adw.ApplicationWindow):
         self.active_toasts.append(toast); self.toast_overlay.add_toast(toast)
 
     def _on_window_map(self, widget):
-        """Se ejecuta una vez cuando la VENTANA está lista para ser mostrada."""
+        """Callback for when the window is ready to be displayed."""
         if not self.signature_popover.get_parent():
             self.signature_popover.set_parent(self)
 
@@ -289,7 +280,7 @@ class AppWindow(Adw.ApplicationWindow):
         self.popover_active_for_sig = None
 
     def _on_drawing_area_motion(self, controller, x, y):
-        """Comprueba el movimiento del ratón contra la caché y muestra el popover."""
+        """Checks mouse movement against the cached signature rectangles and shows the popover."""
         found_sig_tuple = None
         for rect, sig in self.signature_view_rects:
             if rect.contains_point(x, y):
@@ -303,7 +294,6 @@ class AppWindow(Adw.ApplicationWindow):
             self.popover_active_for_sig = sig
             self._update_popover_content(sig)
             
-            # Corregir la llamada a translate_coordinates para que desempaquete 2 valores, como indicaste.
             dest_x, dest_y = self.drawing_area.translate_coordinates(self, rect_da.x, rect_da.y)
             
             pointing_rect = Gdk.Rectangle()
