@@ -24,7 +24,6 @@ from pyhanko.pdf_utils.generic import ArrayObject
 from i18n import I18NManager
 from certificate_manager import CertificateManager, KEYRING_SCHEMA
 from config_manager import ConfigManager
-from ui.dialogs import create_stamp_editor_dialog
 from stamp_creator import HtmlStamp, pango_to_html
 from pyhanko.stamp import StaticStampStyle
 
@@ -270,7 +269,16 @@ class GnomeSign(Adw.Application):
 
     def on_preferences_close_request(self, widget): self.preferences_window = None
 
-    def on_edit_stamps_clicked(self, action, param): create_stamp_editor_dialog(self.window, self, self.config)
+    def on_edit_stamps_clicked(self, action, param):
+        from ui.stamp_editor_dialog import StampEditorDialog
+        
+        # --- INICIO CORRECCIÓN ---
+        # La llamada ahora solo necesita la referencia a la aplicación.
+        dialog = StampEditorDialog(parent_window=self.window, app=self)
+        # --- FIN CORRECCIÓN ---
+        
+        dialog.present()
+    
     def on_lang_change_state(self, action, value):
         new_lang = value.get_string()
         if action.get_state().get_string() != new_lang:
@@ -406,17 +414,24 @@ class GnomeSign(Adw.Application):
         self.emit("signature-state-changed")
 
     def get_parsed_stamp_text(self, certificate, override_template=None):
-        if override_template is not None: template = override_template
+        """Parses a signature template, replacing placeholders with actual certificate data."""
+        if override_template is not None:
+            template_text = override_template
         else:
             template_obj = self.config.get_active_template()
-            if not template_obj: return "Error: No active signature template found."
-            template = template_obj.get(f"template_{self.i18n.get_language()}", template_obj.get("template_en", ""))
+            if not template_obj:
+                return "Error: No active signature template found."
+            # Lógica simplificada: ya no hay que comprobar el idioma
+            template_text = template_obj.get("template", "")
+
         def get_cn(name):
             try: return name.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
             except (IndexError, AttributeError): return str(name)
-        text = template.replace("$$SUBJECTCN$$", get_cn(certificate.subject))\
-                       .replace("$$ISSUERCN$$", get_cn(certificate.issuer))\
-                       .replace("$$CERTSERIAL$$", str(certificate.serial_number))
+
+        text = template_text.replace("$$SUBJECTCN$$", get_cn(certificate.subject))\
+                           .replace("$$ISSUERCN$$", get_cn(certificate.issuer))\
+                           .replace("$$CERTSERIAL$$", str(certificate.serial_number))
+        
         if date_match := re.search(r'\$\$SIGNDATE=(.*?)\$\$', text):
             format_pattern = date_match.group(1).replace("dd", "%d").replace("MM", "%m").replace("yyyy", "%Y").replace("yy", "%y").replace("HH", "%H").replace("mm", "%M").replace("ss", "%S")
             text = text.replace(date_match.group(0), datetime.now().strftime(format_pattern))

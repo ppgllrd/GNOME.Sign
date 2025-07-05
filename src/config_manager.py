@@ -35,11 +35,21 @@ class ConfigManager:
         """Creates and saves a set of default signature templates if none are present in the config."""
         if not self.config_data['signature_templates']:
             simple_id = uuid.uuid4().hex
-            simple_template = { "id": simple_id, "name": "Simple", "template_es": "Firmado digitalmente por:\n<b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd-MM-yyyy$$", "template_en": "Digitally signed by:\n<b>$$SUBJECTCN$$</b>\nDate: $$SIGNDATE=yyyy-MM-dd$$" }
+            # Estructura simplificada: solo 'template'
+            simple_template = { 
+                "id": simple_id, 
+                "name": "Simple", 
+                "template": "Firmado digitalmente por:\n<b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd-MM-yyyy$$" 
+            }
             detailed_id = uuid.uuid4().hex
-            detailed_template = { "id": detailed_id, "name": "Detallado/Detailed", "template_es": "Firmado digitalmente por:\n<b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd-MM-yyyy$$\nCertificado emitido por:\n<b>$$ISSUERCN$$</b>\nNúmero de serie del certificado:\n<small><b>$$CERTSERIAL$$</b></small>", "template_en": "Digitally signed by:\n<b>$$SUBJECTCN$$</b>\nDate: $$SIGNDATE=yyyy-MM-dd$$\nCertificate issued by:\n<b>$$ISSUERCN$$</b>\nCertificate serial number:\n<small><b>$$CERTSERIAL$$</b></small>" }
+            detailed_template = { 
+                "id": detailed_id, 
+                "name": "Detallada", 
+                "template": "Firmado por: <b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd-MM-yyyy$$\nEmisor: <b>$$ISSUERCN$$</b>"
+            }
             self.config_data['signature_templates'].extend([simple_template, detailed_template])
-            self.config_data['active_template_id'] = simple_id; self.save()
+            self.config_data['active_template_id'] = simple_id
+            self.save()
 
     def save(self):
         """Saves the current configuration data to the JSON file."""
