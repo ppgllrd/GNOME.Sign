@@ -9,7 +9,6 @@ from certificate_manager import KEYRING_SCHEMA
 class PreferencesWindow(Adw.PreferencesWindow):
     """A window for managing application preferences, including language and certificates."""
     def __init__(self, initial_page_name=None, **kwargs): 
-        """Initializes the preferences window."""
         super().__init__(**kwargs)
         self.app = self.get_application()
         self.i18n = self.app.i18n
@@ -26,7 +25,6 @@ class PreferencesWindow(Adw.PreferencesWindow):
 
         if initial_page_name:
             self.set_visible_page_name(initial_page_name) 
-
 
         self.connect("destroy", self.on_preferences_window_destroyed)
         
@@ -83,7 +81,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.location_row.set_tooltip_text(self.i18n._("location_placeholder"))
         self.certs_page.set_title(self.i18n._("certificates"))
         self.certs_page.set_icon_name("dialog-password-symbolic")
-        self.update_ui() # Re-build the dynamic certificate list with new translations
+        self.update_ui()
 
     def _on_language_changed(self, app):
         """Callback for the 'language-changed' signal from the application."""
@@ -97,7 +95,6 @@ class PreferencesWindow(Adw.PreferencesWindow):
 
     def update_ui(self):
         """Updates the UI, primarily by rebuilding the dynamic list of certificates."""
-        # Rebuilding the group is a robust way to handle dynamic content.
         if hasattr(self, 'certs_group') and self.certs_group.get_parent():
             self.certs_page.remove(self.certs_group)
         
@@ -143,39 +140,20 @@ class PreferencesWindow(Adw.PreferencesWindow):
 
         add_button = Gtk.Button.new_with_label(self.app._("add_certificate"))
         add_button.get_style_context().add_class("suggested-action")
+        # --- INICIO CAMBIO: Llamar al nuevo método centralizado ---
         add_button.connect("clicked", self._on_add_cert_clicked)
+        # --- FIN CAMBIO ---
         add_row = Adw.ActionRow.new(); add_row.set_halign(Gtk.Align.CENTER); add_row.add_prefix(add_button)
         self.certs_group.add(add_row)
     
+    # --- INICIO CAMBIO: Simplificar manejadores ---
     def _on_add_cert_clicked(self, button):
-        """Opens a file chooser to add a new certificate."""
-        def on_response(dialog, response):
-            if response == Gtk.ResponseType.ACCEPT:
-                file = dialog.get_file()
-                if file: self._process_certificate_selection(file.get_path())
-        
-        # Use Gtk.FileChooserNative for better desktop integration
-        file_chooser = Gtk.FileChooserNative.new(
-            self.app._("open_cert_dialog_title"), # title
-            self,                                 # transient_for (this window)
-            Gtk.FileChooserAction.OPEN,           # action
-            self.app._("open"),                   # accept_label
-            self.app._("cancel")                  # cancel_label
-        )
-
-        filter_p12 = Gtk.FileFilter()
-        filter_p12.set_name(self.app._("p12_files"))
-        filter_p12.add_pattern("*.p12")
-        filter_p12.add_pattern("*.pfx")
-        file_chooser.add_filter(filter_p12)
-        
-        file_chooser.connect("response", on_response)
-        file_chooser.show()
+        """Pide a la aplicación principal que inicie el flujo de añadir certificado."""
+        self.app.request_add_new_certificate()
 
     def _on_cert_toggled(self, button, path):
         """Notifica a la app que se ha seleccionado un nuevo certificado activo."""
         if button.get_active():
-            # Correcto: Llama al método centralizado en la app.
             self.app.set_active_certificate(path)
     
     def _on_delete_cert_clicked(self, button, path):
@@ -188,45 +166,17 @@ class PreferencesWindow(Adw.PreferencesWindow):
             text=self.app._("confirm_delete_cert_title"), 
             secondary_text=self.app._("confirm_delete_cert_message")
         )
-        
         def on_confirm(d, res):
             if res == Gtk.ResponseType.YES:
-                # Correcto: La ventana solo pide la acción, no la ejecuta.
                 self.app.remove_certificate(path)
             d.destroy()
-            
         confirm_dialog.connect("response", on_confirm)
         confirm_dialog.present()
-
-    def _process_certificate_selection(self, pkcs12_path):
-        """
-        Muestra un diálogo para pedir la contraseña y luego pide a la app 
-        que añada el certificado.
-        """
-        dialog = Gtk.Dialog(title=self.app._("password"), transient_for=self, modal=True)
-        dialog.add_buttons(self.i18n._("cancel"), Gtk.ResponseType.CANCEL, self.i18n._("accept"), Gtk.ResponseType.OK)
-        ok_button = dialog.get_widget_for_response(Gtk.ResponseType.OK)
-        ok_button.get_style_context().add_class("suggested-action")
-        dialog.set_default_widget(ok_button)
-        
-        content_area = dialog.get_content_area()
-        content_area.set_spacing(10)
-        content_area.set_margin_top(10); content_area.set_margin_bottom(10)
-        content_area.set_margin_start(10); content_area.set_margin_end(10)
-        
-        content_area.append(Gtk.Label(label=f"<b>{os.path.basename(pkcs12_path)}</b>", use_markup=True))
-        password_entry = Gtk.Entry(visibility=False, placeholder_text=self.app._("password"))
-        content_area.append(password_entry)
-        password_entry.connect("activate", lambda w: dialog.response(Gtk.ResponseType.OK))
-
-        def on_response(d, res):
-            if res == Gtk.ResponseType.OK:
-                # Pide a la app que realice la acción de añadir.
-                self.app.add_certificate(pkcs12_path, password_entry.get_text())
-            d.destroy()
-
-        dialog.connect("response", on_response)
-        dialog.present()
+    
+    # El método _process_certificate_selection se ha movido a gnomesign.py,
+    # por lo que se puede eliminar de aquí.
+    
+    # --- FIN CAMBIO ---
 
     def _on_reason_changed(self, entry_row, param):
         """Saves the reason when it's changed by the user."""

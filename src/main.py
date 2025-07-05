@@ -24,6 +24,10 @@ from pyhanko.pdf_utils.generic import ArrayObject
 from i18n import I18NManager
 from certificate_manager import CertificateManager, KEYRING_SCHEMA
 from config_manager import ConfigManager
+from ui.stamp_editor_dialog import StampEditorDialog
+# --- INICIO CAMBIO: Importar diálogos ---
+from ui.dialogs import create_password_dialog
+# --- FIN CAMBIO ---
 from stamp_creator import HtmlStamp, pango_to_html
 from pyhanko.stamp import StaticStampStyle
 
@@ -80,11 +84,9 @@ class SignatureDetails:
             self.sign_time = validation_status.timestamp_validity.timestamp
 
 class GnomeSign(Adw.Application):
-    # --- INICIO CAMBIO: Definición de señales para desacoplamiento ---
     __gsignals__ = {
         'language-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'certificates-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
-        # Señales corregidas con tipos de GObject
         'document-changed': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
         'page-changed': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT, GObject.TYPE_INT, GObject.TYPE_INT)),
         'signature-state-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
@@ -92,7 +94,6 @@ class GnomeSign(Adw.Application):
         'toast-request': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_PYOBJECT)),
         'highlight-rect-changed': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
     }
-    # --- FIN CAMBIO ---
 
     def __init__(self):
         super().__init__(application_id="org.pepeg.GnomeSign", flags=Gio.ApplicationFlags.HANDLES_OPEN)
@@ -127,9 +128,6 @@ class GnomeSign(Adw.Application):
     
     def do_activate(self):
         self.window.present()
-        # --- INICIO CAMBIO: No llamar a update_ui() directamente ---
-        # La ventana se construye y se actualiza a sí misma al inicio.
-        # --- FIN CAMBIO ---
     
     def do_open(self, files, n_files, hint):
         if n_files > 0 and files[0].get_path(): self.open_file_path(files[0].get_path())
@@ -151,7 +149,6 @@ class GnomeSign(Adw.Application):
         for name, callback in simple_actions:
             action = Gio.SimpleAction.new(name, None); action.connect("activate", callback); self.add_action(action)
 
-    # --- INICIO CAMBIO: Emitir señales en lugar de manipular la UI ---
     def open_file_path(self, file_path, show_toast=True):
         try:
             if not os.path.exists(file_path): raise FileNotFoundError(f"File not found: {file_path}")
@@ -194,7 +191,6 @@ class GnomeSign(Adw.Application):
             self.emit("toast-request", self._("open_pdf_error").format(e), None, None)
             self.doc = None; self.signatures = []; 
             self.emit("document-changed", None)
-    # --- FIN CAMBIO ---
 
     def on_show_signatures_clicked(self, action, param):
         if self.window:
@@ -258,25 +254,20 @@ class GnomeSign(Adw.Application):
         if os.path.exists(file_path): self.open_file_path(file_path)
         else:
             self.emit("toast-request", f"File not found: {file_path}", None, None)
-            self.config.remove_recent_file(file_path); self.config.save(); self.emit("language-changed") # To rebuild menu
+            self.config.remove_recent_file(file_path); self.config.save(); self.emit("language-changed")
 
     def on_preferences_clicked(self, action, param):
         if self.preferences_window: self.preferences_window.present(); return
         page_name = 'certificates' if action.get_name() == 'manage_certs' else None
         from ui.preferences_window import PreferencesWindow
-        self.preferences_window = PreferencesWindow(application=self, transient_for=self.window, initial_page_name=page_name)
+        self.preferences_window = PreferencesWindow(application=self, initial_page_name=page_name)
         self.preferences_window.connect("close-request", self.on_preferences_close_request); self.preferences_window.present()
 
     def on_preferences_close_request(self, widget): self.preferences_window = None
 
     def on_edit_stamps_clicked(self, action, param):
         from ui.stamp_editor_dialog import StampEditorDialog
-        
-        # --- INICIO CORRECCIÓN ---
-        # La llamada ahora solo necesita la referencia a la aplicación.
         dialog = StampEditorDialog(parent_window=self.window, app=self)
-        # --- FIN CORRECCIÓN ---
-        
         dialog.present()
     
     def on_lang_change_state(self, action, value):
@@ -285,7 +276,6 @@ class GnomeSign(Adw.Application):
             action.set_state(value); self.i18n.set_language(new_lang)
             self.config.set_language(new_lang); self.emit('language-changed')
 
-    # --- INICIO CAMBIO: Emitir señales en lugar de manipular la UI ---
     def on_sign_document_clicked(self, action=None, param=None):
         if not self.active_cert_path:
             self.emit("toast-request", self._("no_cert_selected_error"), None, None); return
@@ -328,14 +318,11 @@ class GnomeSign(Adw.Application):
         except Exception as e:
             self.emit("toast-request", self._("sig_error_message").format(e), None, None)
             import traceback; traceback.print_exc()
-    # --- FIN CAMBIO ---
         
     def on_about_clicked(self, action, param):
-        dialog = Gtk.AboutDialog(transient_for=self.window, modal=True)
-        dialog.set_program_name("GnomeSign"); dialog.set_version("1.0"); dialog.set_comments(self._("sign_reason"))
-        dialog.set_logo_icon_name("org.pepeg.GnomeSign"); dialog.set_website("https://github.com/ppgllrd/GNOME.Sign")
-        dialog.set_authors(["Pepe Gallardo", "Gemini"]); dialog.present()
-
+        from ui.dialogs import create_about_dialog
+        create_about_dialog(self.window, self._)
+        
     def reset_signature_state(self):
         self.signature_rect = None
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
@@ -343,7 +330,6 @@ class GnomeSign(Adw.Application):
         self.highlight_rect = None
         self.emit("signature-state-changed")
 
-    # --- INICIO CAMBIO: Emitir señales ---
     def display_page(self, page_num, keep_sidebar_view=False):
         if self.highlight_rect:
             self.highlight_rect = None
@@ -357,10 +343,6 @@ class GnomeSign(Adw.Application):
             self.page = self.doc.load_page(page_num)
             self.display_pixbuf = None
             self.emit("page-changed", self.page, self.current_page, len(self.doc))
-        
-        if self.window and not keep_sidebar_view:
-            self.window.sidebar.select_page(page_num)
-    # --- FIN CAMBIO ---
     
     def on_prev_page_clicked(self, button):
         if self.doc and self.current_page > 0:
@@ -414,15 +396,13 @@ class GnomeSign(Adw.Application):
         self.emit("signature-state-changed")
 
     def get_parsed_stamp_text(self, certificate, override_template=None):
-        """Parses a signature template, replacing placeholders with actual certificate data."""
         if override_template is not None:
             template_text = override_template
         else:
             template_obj = self.config.get_active_template()
             if not template_obj:
                 return "Error: No active signature template found."
-            # Lógica simplificada: ya no hay que comprobar el idioma
-            template_text = template_obj.get("template", "")
+            template_text = template_obj.get("template", template_obj.get("template_es", ""))
 
         def get_cn(name):
             try: return name.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
@@ -441,8 +421,7 @@ class GnomeSign(Adw.Application):
         """Establece el certificado activo, guarda la config y notifica a la UI."""
         self.active_cert_path = path
         self.config.set_active_cert_path(path)
-        self.emit("certificates-changed") # Para que tooltips, etc., se actualicen
-        self.emit("signature-state-changed")
+        self.emit("certificates-changed")
 
     def add_certificate(self, pkcs12_path, password):
         """Añade un nuevo certificado, lo guarda y notifica a la UI."""
@@ -453,7 +432,7 @@ class GnomeSign(Adw.Application):
             self.config.set_last_folder(os.path.dirname(pkcs12_path))
             self.config.save()
             self.cert_manager.add_cert_path(pkcs12_path)
-            self.set_active_certificate(pkcs12_path) # Reutilizamos el método para notificar
+            self.set_active_certificate(pkcs12_path)
             return True
         else:
             self.emit("toast-request", self._("bad_password_or_file"), None, None)
@@ -470,8 +449,48 @@ class GnomeSign(Adw.Application):
             new_path = certs[0]['path'] if certs else None
             self.set_active_certificate(new_path)
         else:
-            # Aunque no era el activo, la lista ha cambiado.
             self.emit("certificates-changed")
+
+    # --- INICIO CAMBIO: Nuevo método para centralizar el flujo ---
+    def request_add_new_certificate(self):
+        """
+        Gestiona el flujo completo de añadir un nuevo certificado:
+        1. Muestra el selector de ficheros.
+        2. Muestra el diálogo de contraseña.
+        3. Llama a la lógica de negocio para añadir el certificado.
+        """
+        def on_file_chooser_response(dialog, response):
+            if response == Gtk.ResponseType.ACCEPT:
+                if file := dialog.get_file():
+                    pkcs12_path = file.get_path()
+                    # Anidar el callback para la contraseña
+                    def on_password_response(password):
+                        if password is not None:
+                            self.add_certificate(pkcs12_path, password)
+                    
+                    # Usar el diálogo de contraseña centralizado
+                    create_password_dialog(
+                        self.window,
+                        self._("password"),
+                        os.path.basename(pkcs12_path),
+                        self._,
+                        on_password_response
+                    )
+
+        file_chooser = Gtk.FileChooserNative.new(
+            self._("open_cert_dialog_title"),
+            self.window,
+            Gtk.FileChooserAction.OPEN,
+            self._("open"),
+            self._("cancel")
+        )
+        filter_p12 = Gtk.FileFilter()
+        filter_p12.set_name(self._("p12_files"))
+        filter_p12.add_pattern("*.p12"); filter_p12.add_pattern("*.pfx")
+        file_chooser.add_filter(filter_p12)
+        file_chooser.connect("response", on_file_chooser_response)
+        file_chooser.show()
+    # --- FIN CAMBIO ---
 
 if __name__ == "__main__":
     app = GnomeSign()
