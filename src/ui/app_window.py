@@ -20,25 +20,19 @@ class AppWindow(Adw.ApplicationWindow):
         self._build_ui(Sidebar, WelcomeView); self._connect_signals()
 
     def _build_ui(self, Sidebar, WelcomeView):
-        """Constructs the main UI layout and widgets."""
         app = self.get_application()
-        
         self.view_stacker = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.header_bar = Adw.HeaderBar()
         self.view_stacker.append(self.header_bar)
-        
         self.signature_banner = Adw.Banner.new("")
         self.signature_banner.set_revealed(False)
         self.view_stacker.append(self.signature_banner)
-        
         self.flap = Adw.Flap()
         self.view_stacker.append(self.flap)
-        
         self.toast_overlay = Adw.ToastOverlay.new()
         self.toast_overlay.set_child(self.view_stacker)
         self.set_content(self.toast_overlay)
 
-        # HeaderBar Content
         self.sidebar_button = Gtk.ToggleButton(icon_name="view-list-symbolic")
         self.header_bar.pack_start(self.sidebar_button)
         self.title_widget = Adw.WindowTitle(title=app._("window_title"))
@@ -61,7 +55,6 @@ class AppWindow(Adw.ApplicationWindow):
         self.sign_button = Gtk.Button(icon_name="document-edit-symbolic")
         self.header_bar.pack_end(self.sign_button)
         
-        # Flap and Content Stack
         self.sidebar = Sidebar(); self.flap.set_flap(self.sidebar)
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.SLIDE_UP_DOWN, vexpand=True)
         self.flap.set_content(self.stack)
@@ -72,7 +65,6 @@ class AppWindow(Adw.ApplicationWindow):
         self.welcome_view = WelcomeView()
         self.stack.add_named(self.welcome_view, "welcome_view")
 
-        # Popover Creation
         self.signature_popover = Gtk.Popover.new()
         popover_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=6, margin_bottom=6, margin_start=10, margin_end=10)
         self.popover_content_label = Gtk.Label(xalign=0, wrap=True)
@@ -80,6 +72,12 @@ class AppWindow(Adw.ApplicationWindow):
         self.signature_popover.set_child(popover_box)
         self.signature_popover.set_autohide(False) 
         
+        # --- INICIO CAMBIO: Actualización inicial de la UI ---
+        # La UI se actualiza una vez al principio basada en el estado inicial de la app
+        self._on_document_changed(app, app.doc)
+        self._on_language_changed(app)
+        # --- FIN CAMBIO ---
+
     def _connect_signals(self):
         app = self.get_application()
         self.open_button.connect("clicked", lambda w: app.activate_action("open"))
@@ -91,21 +89,17 @@ class AppWindow(Adw.ApplicationWindow):
         self.next_page_button.connect("clicked", app.on_next_page_clicked)
         self.page_entry_button.connect("clicked", app.on_jump_to_page_clicked)
         self.sidebar_button.connect("toggled", self.on_sidebar_toggled)
+        self.sidebar.connect("page-selected", self._on_sidebar_page_selected)
         self.flap.connect("notify::reveal-flap", self.on_flap_reveal_changed)
-        self.sidebar.connect("page-selected", lambda sb, page_num: app.display_page(page_num))
         
         self.drawing_area.set_draw_func(self._draw_page_and_rect)
         self.drawing_area.connect("resize", self._on_drawing_area_resize)
-        
         self.connect("map", self._on_window_map)
         
         drag = Gtk.GestureDrag.new(); drag.connect("drag-begin", app.on_drag_begin); drag.connect("drag-update", app.on_drag_update); drag.connect("drag-end", app.on_drag_end)
         self.drawing_area.add_controller(drag)
-        
-        click_gesture = Gtk.GestureClick.new()
-        click_gesture.connect("released", self._on_drawing_area_click) 
+        click_gesture = Gtk.GestureClick.new(); click_gesture.connect("released", self._on_drawing_area_click)
         self.drawing_area.add_controller(click_gesture)
-        
         drop_target = Gtk.DropTarget.new(type=Gio.File, actions=Gdk.DragAction.COPY); drop_target.connect("drop", self._on_file_drop)
         self.add_controller(drop_target)
         
@@ -113,7 +107,98 @@ class AppWindow(Adw.ApplicationWindow):
         motion_controller.connect("motion", self._on_drawing_area_motion)
         motion_controller.connect("leave", self._on_drawing_area_leave)
         self.drawing_area.add_controller(motion_controller)
+
+        key_controller = Gtk.EventControllerKey.new()
+        key_controller.connect("key-pressed", self._on_key_pressed)
+        self.add_controller(key_controller)
         
+        # --- INICIO CAMBIO: Conectar a las señales de la aplicación ---
+        app.connect("document-changed", self._on_document_changed)
+        app.connect("page-changed", self._on_page_changed)
+        app.connect("signature-state-changed", self._on_signature_state_changed)
+        app.connect("signatures-found", self._on_signatures_found)
+        app.connect("toast-request", self._on_toast_request)
+        app.connect("language-changed", self._on_language_changed)
+        app.connect("highlight-rect-changed", lambda app, rect: self.drawing_area.queue_draw())
+        app.connect("certificates-changed", self._on_certificates_changed)
+        # --- FIN CAMBIO ---
+
+    # --- INICIO CAMBIO: Nuevos manejadores de señales ---
+
+    def _on_document_changed(self, app, doc):
+        is_doc_loaded = doc is not None
+        self.stack.set_visible_child_name("pdf_view" if is_doc_loaded else "welcome_view")
+        self.sidebar_button.set_sensitive(is_doc_loaded)
+        if not is_doc_loaded and self.flap.get_reveal_flap():
+            self.flap.set_reveal_flap(False)
+        self.title_widget.set_subtitle(os.path.basename(app.current_file_path) if is_doc_loaded and app.current_file_path else "")
+        self.sidebar.populate(doc, app.signatures)
+        self.welcome_view.update_ui(app)
+        self.hide_signature_info()
+        self._on_signature_state_changed(app) # Actualizar estado de botones
+
+    def _on_sidebar_page_selected(self, sidebar, page_num):
+        app = self.get_application()
+        app.display_page(page_num)
+
+    def _on_page_changed(self, app, page, current_page, total_pages):
+        self._update_signature_view_rects()
+        self.page_entry_button.set_label(f"{current_page + 1} / {total_pages}")
+        self.prev_page_button.set_sensitive(current_page > 0)
+        self.next_page_button.set_sensitive(current_page < total_pages - 1)
+        self.page_entry_button.set_sensitive(True)
+        self.drawing_area.queue_draw()
+        GLib.idle_add(self.adjust_scroll_and_viewport)
+        self.sidebar.select_page(current_page)
+    
+    def _on_signature_state_changed(self, app):
+        is_doc_loaded = app.doc is not None
+        can_sign = is_doc_loaded and app.signature_rect and app.active_cert_path
+        self.sign_button.set_sensitive(can_sign)
+        if can_sign:
+            self.sign_button.set_tooltip_text(app._("sign_button_tooltip_sign"))
+        elif not app.active_cert_path:
+            self.sign_button.set_tooltip_text(app._("no_cert_selected_error"))
+        else:
+            self.sign_button.set_tooltip_text(app._("sign_button_tooltip_select_area"))
+        self.drawing_area.queue_draw()
+    
+    def _on_signatures_found(self, app, signatures):
+        self.show_signature_info(len(signatures))
+        self.show_sigs_button.set_visible(bool(signatures))
+    
+    def _on_toast_request(self, app, message, button_label, callback_func):
+        if callback_func:
+            # La función de callback debe ser un GObject.Callable o similar.
+            # Aquí, la lambda captura el estado actual de la app.
+            callback = lambda: callback_func()
+            self.show_toast(message, button_label, callback)
+        else:
+            self.show_toast(message)
+
+    def _on_language_changed(self, app):
+        self._build_and_set_menu(app)
+        # Actualizar tooltips y textos estáticos
+        self.sidebar_button.set_tooltip_text(app._("toggle_sidebar_tooltip"))
+        self.open_button.set_tooltip_text(app._("open_pdf"))
+        self.prev_page_button.set_tooltip_text(app._("prev_page"))
+        self.next_page_button.set_tooltip_text(app._("next_page"))
+        self.page_entry_button.set_tooltip_text(app._("jump_to_page_title"))
+        self.show_sigs_button.set_tooltip_text(app._("show_signatures_tooltip"))
+        self._update_certs_button_tooltip()
+        self._on_signature_state_changed(app) # Actualiza tooltip de firmar
+    
+    def _update_certs_button_tooltip(self):
+        app = self.get_application()
+        if app.active_cert_path:
+            cert_details = next((c for c in app.cert_manager.get_all_certificate_details() if c['path'] == app.active_cert_path), None)
+            tooltip = cert_details['subject_cn'] if cert_details else app._("manage_certificates_tooltip")
+        else:
+            tooltip = app._("manage_certificates_tooltip")
+        self.certs_button.set_tooltip_text(tooltip)
+        
+    # --- FIN CAMBIO ---
+
     def show_signature_info(self, count):
         app = self.get_application()
         self.signature_banner.set_title(app._("signatures_found_toast").format(count)); self.signature_banner.set_button_label(app._("go_to_signatures")); self.signature_banner.set_revealed(True)
@@ -128,43 +213,21 @@ class AppWindow(Adw.ApplicationWindow):
         return False
     
     def _on_drawing_area_click(self, gesture, n_press, x, y):
-        """
-        Handles a click on the drawing area. 
-        If the click is on a signature, it opens the signature details dialog.
-        Otherwise, it clears any highlight.
-        """
         app = self.get_application()
-
         found_sig_details = None
         for rect, sig_details in self.signature_view_rects:
             if rect.contains_point(x, y):
                 found_sig_details = sig_details
                 break
-
         if found_sig_details:
             app.on_signature_selected(self.sidebar, found_sig_details)
         else:
             if app.highlight_rect:
                 app.highlight_rect = None
-                self.drawing_area.queue_draw()
+                app.emit("highlight-rect-changed", None)
 
     def on_sidebar_toggled(self, button): self.flap.set_reveal_flap(button.get_active())
     def on_flap_reveal_changed(self, flap, param): self.sidebar_button.set_active(flap.get_reveal_flap())
-    def update_ui(self, app): self.welcome_view.update_ui(app); self.update_header_bar_state(app); self._build_and_set_menu(app); self.drawing_area.queue_draw()
-            
-    def update_header_bar_state(self, app):
-        is_doc_loaded = app.doc is not None
-        self.stack.set_visible_child_name("pdf_view" if is_doc_loaded else "welcome_view")
-        self.sidebar_button.set_sensitive(is_doc_loaded)
-        if not is_doc_loaded and self.flap.get_reveal_flap(): self.flap.set_reveal_flap(False)
-        self.title_widget.set_subtitle(os.path.basename(app.current_file_path) if is_doc_loaded and app.current_file_path else "")
-        self.show_sigs_button.set_visible(is_doc_loaded and bool(app.signatures))
-        if not is_doc_loaded: self.hide_signature_info()
-        self.prev_page_button.set_sensitive(is_doc_loaded and app.current_page > 0)
-        self.next_page_button.set_sensitive(is_doc_loaded and app.current_page < len(app.doc) - 1)
-        self.page_entry_button.set_sensitive(is_doc_loaded)
-        self.page_entry_button.set_label(f"{app.current_page + 1} / {len(app.doc)}" if is_doc_loaded else "- / -")
-        self.sign_button.set_sensitive(is_doc_loaded and app.signature_rect and app.active_cert_path)
 
     def _build_and_set_menu(self, app):
         menu = Gio.Menu.new(); menu.append(app._("open_pdf"), "app.open")
@@ -228,7 +291,7 @@ class AppWindow(Adw.ApplicationWindow):
             if w > 20 and h > 20 and app.active_cert_path:
                 if password := Secret.password_lookup_sync(app.cert_manager.KEYRING_SCHEMA, {"path": app.active_cert_path}, None):
                         _, certificate_pyca = app.cert_manager.get_credentials(app.active_cert_path, password)
-                        if certificate_pyca: # Tu corrección
+                        if certificate_pyca: 
                             from stamp_creator import HtmlStamp, pango_to_html
                             parsed_pango_text = app.get_parsed_stamp_text(certificate_pyca)
                             html_content = pango_to_html(parsed_pango_text)
@@ -248,12 +311,9 @@ class AppWindow(Adw.ApplicationWindow):
         self.active_toasts.append(toast); self.toast_overlay.add_toast(toast)
 
     def _on_window_map(self, widget):
-        """Callback for when the window is ready to be displayed."""
-        if not self.signature_popover.get_parent():
-            self.signature_popover.set_parent(self)
+        if not self.signature_popover.get_parent(): self.signature_popover.set_parent(self)
 
     def _update_signature_view_rects(self):
-        """Calcula y cachea las coordenadas de los rectángulos de firma para la página actual."""
         self.signature_view_rects.clear()
         app = self.get_application()
         if not app.page or not app.signatures: return
@@ -265,9 +325,7 @@ class AppWindow(Adw.ApplicationWindow):
                 x0, y0, x1, y1 = sig.rect
                 view_x, view_y = x0 * scale_factor, (app.page.rect.height - y1) * scale_factor
                 view_w, view_h = (x1 - x0) * scale_factor, (y1 - y0) * scale_factor
-                gdk_rect = Gdk.Rectangle()
-                gdk_rect.x, gdk_rect.y = int(view_x), int(view_y)
-                gdk_rect.width, gdk_rect.height = int(view_w), int(view_h)
+                gdk_rect = Gdk.Rectangle(); gdk_rect.x, gdk_rect.y = int(view_x), int(view_y); gdk_rect.width, gdk_rect.height = int(view_w), int(view_h)
                 self.signature_view_rects.append((gdk_rect, sig))
 
     def _update_popover_content(self, sig_details):
@@ -280,17 +338,13 @@ class AppWindow(Adw.ApplicationWindow):
         self.popover_active_for_sig = None
 
     def _on_drawing_area_motion(self, controller, x, y):
-        """Checks mouse movement against the cached signature rectangles and shows the popover."""
         found_sig_tuple = None
         for rect, sig in self.signature_view_rects:
             if rect.contains_point(x, y):
-                found_sig_tuple = (rect, sig)
-                break
-
+                found_sig_tuple = (rect, sig); break
         if found_sig_tuple:
             rect_da, sig = found_sig_tuple
             if self.popover_active_for_sig is sig: return
-            
             self.popover_active_for_sig = sig
             self._update_popover_content(sig)
             
@@ -306,3 +360,47 @@ class AppWindow(Adw.ApplicationWindow):
             if self.popover_active_for_sig is not None:
                 self.popover_active_for_sig = None
                 self.signature_popover.popdown()
+
+    def _on_key_pressed(self, controller, keyval, keycode, state):
+        """Maneja los eventos de pulsación de teclas para la navegación de páginas."""
+        app = self.get_application()
+        
+        SCROLL_STEP = 40.0 
+
+        if keyval == Gdk.KEY_Page_Down:
+            app.on_next_page_clicked(None)
+            return True 
+        
+        elif keyval == Gdk.KEY_Page_Up:
+            app.on_prev_page_clicked(None)
+            return True
+            
+        elif keyval == Gdk.KEY_Down:
+            adj = self.scrolled_window.get_vadjustment()
+            if adj:
+                new_value = min(adj.get_value() + SCROLL_STEP, adj.get_upper() - adj.get_page_size())
+                adj.set_value(new_value)
+            return True
+
+        elif keyval == Gdk.KEY_Up:
+            adj = self.scrolled_window.get_vadjustment()
+            if adj:
+                new_value = max(adj.get_value() - SCROLL_STEP, adj.get_lower())
+                adj.set_value(new_value)
+            return True
+
+        return False 
+
+    def _on_certificates_changed(self, app):
+        self._update_certs_button_tooltip()
+        self._on_signature_state_changed(app) # Re-evalúa el estado del botón de firma
+
+    def _update_certs_button_tooltip(self):
+        app = self.get_application()
+        if app.active_cert_path:
+            # Buscamos los detalles del certificado activo en la lista de la app
+            cert_details = next((c for c in app.cert_manager.get_all_certificate_details() if c['path'] == app.active_cert_path), None)
+            tooltip = cert_details['subject_cn'] if cert_details else app._("manage_certificates_tooltip")
+        else:
+            tooltip = app._("manage_certificates_tooltip")
+        self.certs_button.set_tooltip_text(tooltip)
