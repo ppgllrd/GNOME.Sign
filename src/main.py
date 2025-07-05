@@ -424,6 +424,7 @@ class GnomeSign(Adw.Application):
         else:
             self.current_page = page_num; self.page = self.doc.load_page(page_num); self.display_pixbuf = None
         if self.window:
+            self.window._update_signature_view_rects()
             self.window.update_header_bar_state(self)
             self.window.drawing_area.queue_draw()
             GLib.idle_add(self.window.adjust_scroll_and_viewport)
