@@ -4,7 +4,6 @@ gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gio, GLib, Secret
 from datetime import datetime, timezone, timedelta
 import os
-from certificate_manager import KEYRING_SCHEMA
 
 class PreferencesWindow(Adw.PreferencesWindow):
     """A window for managing application preferences, including language and certificates."""
@@ -13,8 +12,9 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.app = self.get_application()
         self.i18n = self.app.i18n
         self.set_destroy_with_parent(True)
-        self.set_modal(False)
-        self.set_hide_on_close(False)
+        # La ventana de preferencias es mejor que sea modal
+        self.set_modal(True) 
+        self.set_hide_on_close(True) # Se oculta en vez de destruirse por defecto
         
         self._build_ui()
         self._update_texts() 
@@ -24,12 +24,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.app.connect("certificates-changed", self._on_certificates_changed) 
 
         if initial_page_name:
-            self.set_visible_page_name(initial_page_name) 
-
-        self.connect("destroy", self.on_preferences_window_destroyed)
-        
-    def on_preferences_window_destroyed(self, widget):
-        print("Preferences window closed") 
+            self.set_visible_page_name(initial_page_name)
 
     def _on_certificates_changed(self, app): 
         """Callback for the 'certificates-changed' signal."""
@@ -140,13 +135,10 @@ class PreferencesWindow(Adw.PreferencesWindow):
 
         add_button = Gtk.Button.new_with_label(self.app._("add_certificate"))
         add_button.get_style_context().add_class("suggested-action")
-        # --- INICIO CAMBIO: Llamar al nuevo método centralizado ---
         add_button.connect("clicked", self._on_add_cert_clicked)
-        # --- FIN CAMBIO ---
         add_row = Adw.ActionRow.new(); add_row.set_halign(Gtk.Align.CENTER); add_row.add_prefix(add_button)
         self.certs_group.add(add_row)
     
-    # --- INICIO CAMBIO: Simplificar manejadores ---
     def _on_add_cert_clicked(self, button):
         """Pide a la aplicación principal que inicie el flujo de añadir certificado."""
         self.app.request_add_new_certificate()
@@ -172,11 +164,6 @@ class PreferencesWindow(Adw.PreferencesWindow):
             d.destroy()
         confirm_dialog.connect("response", on_confirm)
         confirm_dialog.present()
-    
-    # El método _process_certificate_selection se ha movido a gnomesign.py,
-    # por lo que se puede eliminar de aquí.
-    
-    # --- FIN CAMBIO ---
 
     def _on_reason_changed(self, entry_row, param):
         """Saves the reason when it's changed by the user."""

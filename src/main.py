@@ -25,9 +25,7 @@ from i18n import I18NManager
 from certificate_manager import CertificateManager, KEYRING_SCHEMA
 from config_manager import ConfigManager
 from ui.stamp_editor_dialog import StampEditorDialog
-# --- INICIO CAMBIO: Importar diálogos ---
-from ui.dialogs import create_password_dialog
-# --- FIN CAMBIO ---
+from ui.dialogs import create_password_dialog, create_about_dialog
 from stamp_creator import HtmlStamp, pango_to_html
 from pyhanko.stamp import StaticStampStyle
 
@@ -257,13 +255,13 @@ class GnomeSign(Adw.Application):
             self.config.remove_recent_file(file_path); self.config.save(); self.emit("language-changed")
 
     def on_preferences_clicked(self, action, param):
-        if self.preferences_window: self.preferences_window.present(); return
+        if self.preferences_window and self.preferences_window.is_visible():
+            self.preferences_window.present()
+            return
         page_name = 'certificates' if action.get_name() == 'manage_certs' else None
         from ui.preferences_window import PreferencesWindow
         self.preferences_window = PreferencesWindow(application=self, initial_page_name=page_name)
-        self.preferences_window.connect("close-request", self.on_preferences_close_request); self.preferences_window.present()
-
-    def on_preferences_close_request(self, widget): self.preferences_window = None
+        self.preferences_window.present()
 
     def on_edit_stamps_clicked(self, action, param):
         from ui.stamp_editor_dialog import StampEditorDialog
@@ -320,7 +318,6 @@ class GnomeSign(Adw.Application):
             import traceback; traceback.print_exc()
         
     def on_about_clicked(self, action, param):
-        from ui.dialogs import create_about_dialog
         create_about_dialog(self.window, self._)
         
     def reset_signature_state(self):
@@ -451,7 +448,6 @@ class GnomeSign(Adw.Application):
         else:
             self.emit("certificates-changed")
 
-    # --- INICIO CAMBIO: Nuevo método para centralizar el flujo ---
     def request_add_new_certificate(self):
         """
         Gestiona el flujo completo de añadir un nuevo certificado:
@@ -463,12 +459,11 @@ class GnomeSign(Adw.Application):
             if response == Gtk.ResponseType.ACCEPT:
                 if file := dialog.get_file():
                     pkcs12_path = file.get_path()
-                    # Anidar el callback para la contraseña
+                    
                     def on_password_response(password):
                         if password is not None:
                             self.add_certificate(pkcs12_path, password)
                     
-                    # Usar el diálogo de contraseña centralizado
                     create_password_dialog(
                         self.window,
                         self._("password"),
@@ -490,7 +485,6 @@ class GnomeSign(Adw.Application):
         file_chooser.add_filter(filter_p12)
         file_chooser.connect("response", on_file_chooser_response)
         file_chooser.show()
-    # --- FIN CAMBIO ---
 
 if __name__ == "__main__":
     app = GnomeSign()
