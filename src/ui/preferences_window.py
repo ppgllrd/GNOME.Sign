@@ -1,20 +1,20 @@
 # ui/preferences_window.py
 import gi
 gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw, Gio, GLib, Secret
+from gi.repository import Gtk, Adw, Gio, GLib
 from datetime import datetime, timezone, timedelta
 import os
 
 class PreferencesWindow(Adw.PreferencesWindow):
     """A window for managing application preferences, including language and certificates."""
     def __init__(self, initial_page_name=None, **kwargs): 
+        """Initializes the preferences window."""
         super().__init__(**kwargs)
         self.app = self.get_application()
         self.i18n = self.app.i18n
         self.set_destroy_with_parent(True)
-        # La ventana de preferencias es mejor que sea modal
         self.set_modal(True) 
-        self.set_hide_on_close(True) # Se oculta en vez de destruirse por defecto
+        self.set_hide_on_close(True)
         
         self._build_ui()
         self._update_texts() 
@@ -24,10 +24,13 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.app.connect("certificates-changed", self._on_certificates_changed) 
 
         if initial_page_name:
-            self.set_visible_page_name(initial_page_name)
+            self.set_visible_page_name(initial_page_name) 
 
+        # Save config when the window is destroyed (closed)
+        self.connect("destroy", lambda w: self.app.config.save())
+        
     def _on_certificates_changed(self, app): 
-        """Callback for the 'certificates-changed' signal."""
+        """Callback for the 'certificates-changed' signal to refresh the list."""
         self.update_ui()
 
     def _build_ui(self):
@@ -140,16 +143,16 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.certs_group.add(add_row)
     
     def _on_add_cert_clicked(self, button):
-        """Pide a la aplicación principal que inicie el flujo de añadir certificado."""
+        """Asks the main application to initiate the add certificate flow."""
         self.app.request_add_new_certificate()
 
     def _on_cert_toggled(self, button, path):
-        """Notifica a la app que se ha seleccionado un nuevo certificado activo."""
+        """Notifies the main application that the active certificate has changed."""
         if button.get_active():
             self.app.set_active_certificate(path)
     
     def _on_delete_cert_clicked(self, button, path):
-        """Pide a la app que elimine un certificado, después de confirmación."""
+        """Asks the main application to remove a certificate, after confirmation."""
         confirm_dialog = Gtk.MessageDialog(
             transient_for=self, 
             modal=True, 
@@ -166,11 +169,9 @@ class PreferencesWindow(Adw.PreferencesWindow):
         confirm_dialog.present()
 
     def _on_reason_changed(self, entry_row, param):
-        """Saves the reason when it's changed by the user."""
+        """Updates the signature reason in the configuration (in-memory)."""
         self.app.config.set_signature_reason(entry_row.get_text())
-        self.app.config.save()
 
     def _on_location_changed(self, entry_row, param):
-        """Saves the location when it's changed by the user."""
+        """Updates the signature location in the configuration (in-memory)."""
         self.app.config.set_signature_location(entry_row.get_text())
-        self.app.config.save()

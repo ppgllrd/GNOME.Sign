@@ -1,5 +1,4 @@
 # ui/stamp_editor_dialog.py
-
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
@@ -12,13 +11,13 @@ class StampEditorDialog(Gtk.Dialog):
     """A dialog for creating, editing, and managing signature stamp templates."""
 
     def __init__(self, parent_window, app, **kwargs):
+        """Initializes the stamp editor dialog."""
         super().__init__(transient_for=parent_window, modal=True, **kwargs)
         
         self.app = app
         self.config = self.app.config
         self.i18n = self.app.i18n
         
-        # Estado interno
         self.current_id = None
         self.initial_form_data = None
         self.loaded_cert = None
@@ -32,13 +31,11 @@ class StampEditorDialog(Gtk.Dialog):
         main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12, margin_top=12, margin_bottom=12, margin_start=12, margin_end=12)
         self.get_content_area().append(main_box)
 
-        # Paneles
         left_pane = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, width_request=220)
         main_box.append(left_pane)
         self.right_pane = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, hexpand=True)
         main_box.append(self.right_pane)
 
-        # Contenido Panel Izquierdo
         left_pane.append(Gtk.Label(label=f"<b>{self.i18n._('templates')}</b>", use_markup=True, xalign=0))
         self.template_combo = Gtk.ComboBoxText()
         left_pane.append(self.template_combo)
@@ -51,11 +48,8 @@ class StampEditorDialog(Gtk.Dialog):
         self.save_btn = Gtk.Button.new_with_label(self.i18n._("save"))
         self.delete_btn = Gtk.Button.new_with_label(self.i18n._("delete"))
         self.set_active_btn = Gtk.Button.new_with_label(self.i18n._("set_as_active"))
-        btn_box.append(self.new_btn)
-        btn_box.append(self.duplicate_btn)
-        btn_box.append(self.save_btn)
-        btn_box.append(self.delete_btn)
-        btn_box.append(self.set_active_btn)
+        btn_box.append(self.new_btn); btn_box.append(self.duplicate_btn); btn_box.append(self.save_btn)
+        btn_box.append(self.delete_btn); btn_box.append(self.set_active_btn)
 
         self._build_right_pane()
         self._connect_signals()
@@ -64,7 +58,7 @@ class StampEditorDialog(Gtk.Dialog):
         self._load_templates_to_combo()
 
     def _build_right_pane(self):
-        """Construye la parte derecha de la UI del editor."""
+        """Builds the right-hand side of the editor UI."""
         self.right_pane.append(Gtk.Label(label=f"<b>{self.i18n._('template_name')}</b>", use_markup=True, xalign=0))
         self.name_entry = Gtk.Entry()
         self.right_pane.append(self.name_entry)
@@ -86,38 +80,30 @@ class StampEditorDialog(Gtk.Dialog):
         preview_container.append(self.preview_area)
 
     def _build_toolbar(self):
+        """Builds the text formatting toolbar."""
         toolbar = Gtk.Box(spacing=6)
         
-        bold_btn = Gtk.Button.new_from_icon_name("format-text-bold-symbolic")
-        bold_btn.connect("clicked", lambda b: self._toggle_pango_tag("b"))
-        italic_btn = Gtk.Button.new_from_icon_name("format-text-italic-symbolic")
-        italic_btn.connect("clicked", lambda b: self._toggle_pango_tag("i"))
+        bold_btn = Gtk.Button.new_from_icon_name("format-text-bold-symbolic"); bold_btn.connect("clicked", lambda b: self._toggle_pango_tag("b"))
+        italic_btn = Gtk.Button.new_from_icon_name("format-text-italic-symbolic"); italic_btn.connect("clicked", lambda b: self._toggle_pango_tag("i"))
 
-        font_combo = Gtk.ComboBoxText.new()
-        font_combo.append("placeholder_id", self.i18n._("font"))
+        font_combo = Gtk.ComboBoxText.new(); font_combo.append("placeholder_id", self.i18n._("font"))
         for font in ["Times-Roman", "Helvetica", "Courier"]: font_combo.append_text(font)
-        font_combo.set_active_id("placeholder_id")
-        font_combo.connect("changed", self._on_font_changed)
+        font_combo.set_active_id("placeholder_id"); font_combo.connect("changed", self._on_font_changed)
 
         size_combo = Gtk.ComboBoxText.new()
         self.pango_size_map = {self.i18n._("size_small"): "small", self.i18n._("size_normal"): "medium", self.i18n._("size_large"): "large", self.i18n._("size_huge"): "x-large"}
         size_combo.append("placeholder_id", self.i18n._("size"))
         for label in self.pango_size_map: size_combo.append_text(label)
-        size_combo.set_active_id("placeholder_id")
-        size_combo.connect("changed", self._on_size_changed)
+        size_combo.set_active_id("placeholder_id"); size_combo.connect("changed", self._on_size_changed)
 
-        color_btn = Gtk.ColorButton.new()
-        color_btn.connect("color-set", lambda b: self._apply_span_tag("color", self._rgba_to_hex(b.get_rgba())))
+        color_btn = Gtk.ColorButton.new(); color_btn.connect("color-set", lambda b: self._apply_span_tag("color", self._rgba_to_hex(b.get_rgba())))
         
-        toolbar.append(bold_btn)
-        toolbar.append(italic_btn)
-        toolbar.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
-        toolbar.append(font_combo)
-        toolbar.append(size_combo)
-        toolbar.append(color_btn)
+        toolbar.append(bold_btn); toolbar.append(italic_btn); toolbar.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        toolbar.append(font_combo); toolbar.append(size_combo); toolbar.append(color_btn)
         return toolbar
 
     def _connect_signals(self):
+        """Connects widget signals to their handlers."""
         self.new_btn.connect("clicked", self._on_new_clicked)
         self.duplicate_btn.connect("clicked", self._on_duplicate_clicked)
         self.save_btn.connect("clicked", self._on_save_clicked)
@@ -131,20 +117,26 @@ class StampEditorDialog(Gtk.Dialog):
         self.preview_area.set_draw_func(self._draw_preview)
         self.connect("response", self._on_response)
         self.connect("close-request", self._on_close_request)
-    
+        
+        # Save config when the dialog is destroyed
+        self.connect("destroy", lambda w: self.app.config.save())
+
     def _on_buffer_changed(self, widget):
+        """Handles changes in the text buffer or name entry to enable the save button."""
         self.preview_area.queue_draw()
         if self._is_form_dirty():
             self.save_btn.set_sensitive(True)
 
     def _get_focused_buffer_and_bounds(self):
+        """Gets the buffer and selection bounds of the text view."""
         buffer = self.text_view.get_buffer()
-        if not buffer.get_has_selection(): return None, None, None
+        if not buffer.get_has_selection(): return None, None
         return buffer, buffer.get_selection_bounds()
 
     def _toggle_pango_tag(self, tag):
+        """Toggles a simple Pango tag (like <b> or <i>) around the selected text."""
         buffer, bounds = self._get_focused_buffer_and_bounds()
-        if not buffer: return
+        if not buffer or not bounds: return
         start, end = bounds
         text = buffer.get_text(start, end, True)
         if text.strip().startswith(f"<{tag}>") and text.strip().endswith(f"</{tag}>"):
@@ -154,46 +146,50 @@ class StampEditorDialog(Gtk.Dialog):
             buffer.delete(start, end); buffer.insert(start, f"<{tag}>{text}</{tag}>")
 
     def _apply_span_tag(self, attribute, value):
+        """Applies a Pango <span> tag with a specific attribute to the selected text."""
         buffer, bounds = self._get_focused_buffer_and_bounds()
-        if not buffer: return
+        if not buffer or not bounds: return
         start, end = bounds
         text = buffer.get_text(start, end, True)
         buffer.delete(start, end); buffer.insert(start, f'<span {attribute}="{value}">{text}</span>')
 
     def _rgba_to_hex(self, rgba):
+        """Converts a Gdk.RGBA color to a hex string (e.g., #RRGGBB)."""
         return f"#{int(rgba.red*255):02x}{int(rgba.green*255):02x}{int(rgba.blue*255):02x}"
         
     def _on_font_changed(self, combo):
+        """Applies the selected font to the text selection."""
         if combo.get_active_id() == "placeholder_id": return
         self._apply_span_tag("font_family", combo.get_active_text())
 
     def _on_size_changed(self, combo):
+        """Applies the selected size to the text selection."""
         if combo.get_active_id() == "placeholder_id": return
         if pango_size := self.pango_size_map.get(combo.get_active_text()):
             self._apply_span_tag("size", pango_size)
             
     def _on_response(self, dialog, response_id):
+        """Handles the dialog's main response signals."""
         if response_id == Gtk.ResponseType.CLOSE:
-            # La lógica de confirmación está en _on_close_request.
-            # Si devuelve True, se detiene el cierre.
             if not self._on_close_request(self):
                 self.destroy()
 
     def _load_certificate_for_preview(self):
+        """Loads the active certificate to render a more accurate preview."""
         if self.app.active_cert_path:
             password = Secret.password_lookup_sync(KEYRING_SCHEMA, {"path": self.app.active_cert_path}, None)
             if password: _, self.loaded_cert = self.app.cert_manager.get_credentials(self.app.active_cert_path, password)
 
     def _get_current_form_state(self):
-        return {
-            "name": self.name_entry.get_text(),
-            "template": self.text_view.get_buffer().get_text(*self.text_view.get_buffer().get_bounds(), False),
-        }
+        """Returns a dictionary with the current data from the form fields."""
+        return { "name": self.name_entry.get_text(), "template": self.text_view.get_buffer().get_text(*self.text_view.get_buffer().get_bounds(), False) }
 
     def _is_form_dirty(self):
+        """Checks if the form data has changed since it was last loaded or saved."""
         return self.initial_form_data is not None and self.initial_form_data != self._get_current_form_state()
 
     def _load_templates_to_combo(self):
+        """Populates the template combo box with all available templates."""
         self.block_combo_changed = True
         self.template_combo.remove_all()
         for t in self.config.get_signature_templates(): self.template_combo.append(t['id'], t['name'])
@@ -208,15 +204,17 @@ class StampEditorDialog(Gtk.Dialog):
         self._on_template_changed(self.template_combo)
 
     def _clear_fields(self):
+        """Clears all input fields in the editor."""
         self.name_entry.set_text("")
         self.text_view.get_buffer().set_text("")
 
     def _load_template_data(self, template_id):
+        """Loads the data for a specific template into the editor fields."""
         template = self.config.get_template_by_id(template_id)
         if template:
             self.current_id = template_id
             self.name_entry.set_text(template['name'])
-            template_content = template.get('template', template.get('template_es', ''))
+            template_content = template.get('template', template.get('template_es', '')) # Handles old format
             self.text_view.get_buffer().set_text(template_content)
             self.delete_btn.set_sensitive(len(self.config.get_signature_templates()) > 1)
             self.set_active_btn.set_sensitive(self.config.get_active_template_id() != template_id)
@@ -228,6 +226,7 @@ class StampEditorDialog(Gtk.Dialog):
         self.preview_area.queue_draw()
 
     def _on_template_changed(self, combo):
+        """Handles the selection change in the template combo box, checking for unsaved changes."""
         if self.block_combo_changed: return
         
         if self._is_form_dirty():
@@ -241,14 +240,14 @@ class StampEditorDialog(Gtk.Dialog):
                     self.template_combo.set_active_id(self.current_id)
                     self.block_combo_changed = False
                 conf_d.destroy()
-            confirm_dialog.connect("response", on_confirm_response)
-            confirm_dialog.present()
+            confirm_dialog.connect("response", on_confirm_response); confirm_dialog.present()
             return
 
         if active_id := combo.get_active_id():
             self._load_template_data(active_id)
 
     def _on_new_clicked(self, btn):
+        """Handles the 'New' button click, preparing the form for a new template."""
         self.current_id = uuid.uuid4().hex
         self._clear_fields()
         self.name_entry.set_text(f"{self.i18n._('new')} {self.i18n._('template')}")
@@ -256,6 +255,7 @@ class StampEditorDialog(Gtk.Dialog):
         self.name_entry.grab_focus()
 
     def _on_duplicate_clicked(self, btn):
+        """Handles the 'Duplicate' button click, creating a copy of the current template."""
         if not self.current_id: return
         self.current_id = uuid.uuid4().hex
         self.name_entry.set_text(f"{self.name_entry.get_text()} ({self.i18n._('copy')})")
@@ -263,6 +263,7 @@ class StampEditorDialog(Gtk.Dialog):
         self.save_btn.set_sensitive(True)
 
     def _on_save_clicked(self, btn):
+        """Handles the 'Save' button click, saving the current template data."""
         if not self.current_id: return
         template_data = {"id": self.current_id, **self._get_current_form_state()}
         self.config.save_template(template_data)
@@ -274,32 +275,37 @@ class StampEditorDialog(Gtk.Dialog):
         self.template_combo.set_active_id(self.current_id or active_id_before)
 
     def _on_delete_clicked(self, btn):
+        """Handles the 'Delete' button click, removing the current template after confirmation."""
         if not self.current_id or len(self.config.get_signature_templates()) <= 1: return
-        self.config.delete_template(self.current_id)
+        
+        # Now we need to call the centralized logic in the app
+        self.app.remove_template(self.current_id)
+        
         self.current_id = None
         self._load_templates_to_combo()
 
     def _on_set_active_clicked(self, btn):
+        """Handles the 'Set as Active' button click."""
         if not self.current_id: return
         self.config.set_active_template_id(self.current_id)
         self.set_active_btn.set_sensitive(False)
         self.app.emit("signature-state-changed")
 
     def _on_close_request(self, dialog):
+        """Handles the dialog close request, checking for unsaved changes before closing."""
         if self._is_form_dirty():
             confirm_dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.YES_NO, text=self.i18n._("unsaved_changes_title"), secondary_text=self.i18n._("confirm_close_message"))
             def on_confirm_response(conf_d, res):
                 if res == Gtk.ResponseType.YES: self.destroy()
                 conf_d.destroy()
-            confirm_dialog.connect("response", on_confirm_response)
-            confirm_dialog.present()
+            confirm_dialog.connect("response", on_confirm_response); confirm_dialog.present()
             return True 
         return False
 
     def _draw_preview(self, area, cr, width, h):
+        """Draw callback for the preview area, rendering the current template."""
         cr.save()
         cr.set_source_rgb(0.9, 0.9, 0.9); cr.paint()
-        
         text = self.text_view.get_buffer().get_text(*self.text_view.get_buffer().get_bounds(), False)
         
         if self.loaded_cert:

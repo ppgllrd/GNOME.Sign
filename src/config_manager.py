@@ -18,8 +18,10 @@ class ConfigManager:
         config_dir = os.path.dirname(self.config_file)
         os.makedirs(config_dir, exist_ok=True)
         try:
-            with open(self.config_file, 'r') as f: self.config_data = json.load(f)
-        except (IOError, json.JSONDecodeError): self.config_data = {}
+            with open(self.config_file, 'r') as f:
+                self.config_data = json.load(f)
+        except (IOError, json.JSONDecodeError):
+            self.config_data = {}
         
         defaults = {
             'certificates': [], 'recent_files': [], 'signature_templates': [],
@@ -28,14 +30,14 @@ class ConfigManager:
             'signature_reason': '', 
             'signature_location': '' 
         }
-        for key, value in defaults.items(): self.config_data.setdefault(key, value)
+        for key, value in defaults.items():
+            self.config_data.setdefault(key, value)
         self._create_default_templates_if_needed()
 
     def _create_default_templates_if_needed(self):
         """Creates and saves a set of default signature templates if none are present in the config."""
         if not self.config_data['signature_templates']:
             simple_id = uuid.uuid4().hex
-            # Estructura simplificada: solo 'template'
             simple_template = { 
                 "id": simple_id, 
                 "name": "Simple", 
@@ -49,13 +51,15 @@ class ConfigManager:
             }
             self.config_data['signature_templates'].extend([simple_template, detailed_template])
             self.config_data['active_template_id'] = simple_id
-            self.save()
+            self.save() # Initial save is OK here, as it's part of first-time setup.
 
     def save(self):
         """Saves the current configuration data to the JSON file."""
         try:
-            with open(self.config_file, 'w') as f: json.dump(self.config_data, f, indent=2)
-        except IOError as e: print(f"Error saving configuration: {e}")
+            with open(self.config_file, 'w') as f:
+                json.dump(self.config_data, f, indent=2)
+        except IOError as e:
+            print(f"Error saving configuration: {e}")
             
     def get_cert_paths(self):
         """Returns a list of all configured certificate paths."""
@@ -63,11 +67,12 @@ class ConfigManager:
         
     def add_cert_path(self, path):
         """Adds a new certificate path to the configuration if it doesn't already exist."""
-        if path not in self.get_cert_paths(): self.config_data["certificates"].append({"path": path})
+        if path not in self.get_cert_paths():
+            self.config_data["certificates"].append({"path": path})
 
     def remove_cert_path(self, path_to_remove):
-        """Removes a certificate path from the configuration and saves the changes."""
-        self.config_data["certificates"] = [c for c in self.config_data["certificates"] if c.get("path") != path_to_remove]; self.save()
+        """Removes a certificate path from the configuration."""
+        self.config_data["certificates"] = [c for c in self.config_data["certificates"] if c.get("path") != path_to_remove]
 
     def get_recent_files(self):
         """Returns the list of recently opened files."""
@@ -76,12 +81,15 @@ class ConfigManager:
     def add_recent_file(self, file_path):
         """Adds a file path to the top of the recent files list."""
         recent_files = deque(self.get_recent_files(), maxlen=self.MAX_RECENT_FILES)
-        if file_path in recent_files: recent_files.remove(file_path)
-        recent_files.appendleft(file_path); self.config_data["recent_files"] = list(recent_files)
+        if file_path in recent_files:
+            recent_files.remove(file_path)
+        recent_files.appendleft(file_path)
+        self.config_data["recent_files"] = list(recent_files)
 
     def remove_recent_file(self, file_path):
         """Removes a specific file path from the recent files list."""
-        if file_path in self.config_data["recent_files"]: self.config_data["recent_files"].remove(file_path)
+        if file_path in self.config_data["recent_files"]:
+            self.config_data["recent_files"].remove(file_path)
             
     def get_signature_templates(self):
         """Returns the list of all signature templates."""
@@ -89,31 +97,28 @@ class ConfigManager:
 
     def get_template_by_id(self, template_id):
         """Finds and returns a signature template by its unique ID."""
-        return next((t for t in self.get_signature_templates() if t['id'] == template_id), None)
+        return next((t for t in self.get_signature_templates() if t.get('id') == template_id), None)
 
     def save_template(self, template_data):
         """Saves a signature template, either by updating an existing one or adding a new one."""
         templates = self.get_signature_templates()
         for i, t in enumerate(templates):
-            if t['id'] == template_data['id']: templates[i] = template_data; self.save(); return
-        templates.append(template_data); self.save()
+            if t.get('id') == template_data.get('id'):
+                templates[i] = template_data
+                return
+        templates.append(template_data)
 
     def delete_template(self, template_id):
-        """Deletes a signature template by its ID and updates the active template if necessary."""
-        templates = self.get_signature_templates()
-        self.config_data['signature_templates'] = [t for t in templates if t['id'] != template_id]
-        if self.get_active_template_id() == template_id:
-            new_active_id = self.config_data['signature_templates'][0]['id'] if self.config_data['signature_templates'] else None
-            self.set_active_template_id(new_active_id)
-        self.save()
+        """Deletes a signature template by its ID."""
+        self.config_data['signature_templates'] = [t for t in self.get_signature_templates() if t.get('id') != template_id]
 
     def get_active_template_id(self):
         """Returns the ID of the currently active signature template."""
         return self.config_data.get('active_template_id')
 
     def set_active_template_id(self, template_id):
-        """Sets the active signature template by its ID and saves the configuration."""
-        self.config_data['active_template_id'] = template_id; self.save()
+        """Sets the active signature template by its ID."""
+        self.config_data['active_template_id'] = template_id
 
     def get_active_template(self):
         """Returns the full data of the currently active signature template."""
@@ -124,8 +129,8 @@ class ConfigManager:
         return self.config_data.get("active_cert_path")
 
     def set_active_cert_path(self, path):
-        """Sets the active certificate path and saves the configuration."""
-        self.config_data['active_cert_path'] = path; self.save()
+        """Sets the active certificate path."""
+        self.config_data['active_cert_path'] = path
     
     def get_last_folder(self):
         """Returns the path of the last folder used for opening files."""
@@ -140,8 +145,8 @@ class ConfigManager:
         return self.config_data.get("language", "es")
 
     def set_language(self, lang_code):
-        """Sets the application language and saves the configuration."""
-        self.config_data["language"] = lang_code; self.save()
+        """Sets the application language."""
+        self.config_data["language"] = lang_code
     
     def get_signature_reason(self):
         """Returns the default signature reason."""

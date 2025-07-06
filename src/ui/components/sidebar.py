@@ -55,19 +55,13 @@ class Sidebar(Gtk.Box):
         switcher_box.append(self.signatures_button)
 
         self.block_signal = False
-
-        # --- INICIO CAMBIO ---
-        # Conectar al evento 'realize' para configurar los textos cuando el widget ya está en la ventana.
         self.connect("realize", self._on_realize)
-        # --- FIN CAMBIO ---
-
-    # --- INICIO CAMBIO: NUEVO MÉTODO ---
+        
     def _on_realize(self, widget):
         """Called when the widget is first realized (i.e., added to a toplevel window)."""
         app = self.get_ancestor(Adw.ApplicationWindow).get_application()
         self.pages_button.set_tooltip_text(app._("page_thumbnails"))
         self.signatures_button.set_tooltip_text(app._("show_signatures_tooltip"))
-    # --- FIN CAMBIO ---
     
     def _on_view_switched(self, button, view_name):
         """Callback to switch the visible child of the Gtk.Stack."""

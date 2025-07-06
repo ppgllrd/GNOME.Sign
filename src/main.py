@@ -25,12 +25,14 @@ from i18n import I18NManager
 from certificate_manager import CertificateManager, KEYRING_SCHEMA
 from config_manager import ConfigManager
 from ui.stamp_editor_dialog import StampEditorDialog
-from ui.dialogs import create_password_dialog, create_about_dialog
+from ui.dialogs import create_password_dialog, create_about_dialog, show_error_dialog
 from stamp_creator import HtmlStamp, pango_to_html
 from pyhanko.stamp import StaticStampStyle
 
 class SignatureDetails:
+    """A data class to hold processed information about a digital signature."""
     def __init__(self, pyhanko_sig, validation_status, page_num, rect):
+        """Initializes the signature details from pyHanko objects."""
         self.pyhanko_sig = pyhanko_sig
         self.status = validation_status
         self.intact = validation_status.intact
@@ -75,18 +77,19 @@ class SignatureDetails:
                 if attr['type'].native == 'signing_time':
                     self.sign_time = attr['values'][0].native
                     break
-        except (KeyError, AttributeError, IndexError, TypeError) as e:
-            print(f"Could not extract signing_time from signed attributes: {e}")
-            self.sign_time = None
+        except (KeyError, AttributeError, IndexError, TypeError):
+            # This is not a critical error, just a missing attribute.
+            pass
         if not self.sign_time and validation_status.timestamp_validity:
             self.sign_time = validation_status.timestamp_validity.timestamp
 
 class GnomeSign(Adw.Application):
+    """The main application class, managing state and high-level logic."""
     __gsignals__ = {
         'language-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'certificates-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'document-changed': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
-        'page-changed': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT, GObject.TYPE_INT, GObject.TYPE_INT)),
+        'page-changed': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT, GObject.TYPE_INT, GObject.TYPE_INT, GObject.TYPE_BOOLEAN)),
         'signature-state-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'signatures-found': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
         'toast-request': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_PYOBJECT)),
@@ -94,6 +97,7 @@ class GnomeSign(Adw.Application):
     }
 
     def __init__(self):
+        """Initializes the application."""
         super().__init__(application_id="org.pepeg.GnomeSign", flags=Gio.ApplicationFlags.HANDLES_OPEN)
         self.config = ConfigManager()
         self.i18n = I18NManager()
@@ -104,12 +108,15 @@ class GnomeSign(Adw.Application):
         self.drag_offset_x, self.drag_offset_y = 0, 0
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
         self.highlight_rect = None
-        self.window, self.stamp_editor_window, self.preferences_window = None, None, None
+        self.window, self.preferences_window = None, None
         self.signatures = []
     
-    def _(self, key): return self.i18n._(key)
+    def _(self, key):
+        """A shorthand for the translation function."""
+        return self.i18n._(key)
     
     def do_startup(self):
+        """Called when the application is starting up."""
         Adw.Application.do_startup(self)
         self.config.load()
         self.i18n.set_language(self.config.get_language())
@@ -119,25 +126,37 @@ class GnomeSign(Adw.Application):
         from ui.app_window import AppWindow
         self.window = AppWindow(application=self)
         self.window.sidebar.connect("signature-selected", self.on_signature_selected)
-        def on_window_close_request(window):
-            self.quit()
-            return True
-        self.window.connect("close-request", on_window_close_request)
+        self.window.connect("close-request", self._on_window_close_request)
+        self.connect("shutdown", self._on_shutdown)
+
+    def _on_window_close_request(self, window):
+        """Handles the main window close request."""
+        self.quit()
+        return True
+
+    def _on_shutdown(self, app):
+        """Saves the configuration when the application is shutting down."""
+        self.config.save()
     
     def do_activate(self):
+        """Called when the application is activated (e.g., launched from the desktop)."""
         self.window.present()
     
     def do_open(self, files, n_files, hint):
-        if n_files > 0 and files[0].get_path(): self.open_file_path(files[0].get_path())
+        """Handles opening files passed as arguments to the application."""
+        if n_files > 0 and files[0].get_path():
+            self.open_file_path(files[0].get_path())
         self.do_activate()
     
     def _build_actions(self):
+        """Creates and adds application-wide actions."""
         actions_with_params = [("open_recent", self.on_open_recent_clicked, "s"), ("change_lang", self.on_lang_change_state, 's', self.i18n.get_language())]
         for name, callback, p_type, *state in actions_with_params:
             action = Gio.SimpleAction.new_stateful(name, GLib.VariantType(p_type), GLib.Variant(p_type, state[0])) if state else Gio.SimpleAction.new(name, GLib.VariantType(p_type))
             if state: action.connect("change-state", callback)
             else: action.connect("activate", callback)
             self.add_action(action)
+
         simple_actions = [
             ("open", self.on_open_pdf_clicked), ("sign", self.on_sign_document_clicked), 
             ("preferences", self.on_preferences_clicked), ("manage_certs", self.on_preferences_clicked), 
@@ -148,63 +167,66 @@ class GnomeSign(Adw.Application):
             action = Gio.SimpleAction.new(name, None); action.connect("activate", callback); self.add_action(action)
 
     def open_file_path(self, file_path, show_toast=True):
+        """Opens a PDF document, analyzes it for signatures, and updates the application state."""
         try:
             if not os.path.exists(file_path): raise FileNotFoundError(f"File not found: {file_path}")
             if self.doc: self.doc.close()
+            
             self.signatures = []
             try:
                 with open(file_path, 'rb') as f:
-                    r = PdfFileReader(f, strict=False)
-                    vc = ValidationContext(allow_fetching=True) 
-                    pages = list(r.root['/Pages']['/Kids'])
-                    for sig in r.embedded_signatures:
+                    reader = PdfFileReader(f, strict=False)
+                    validation_context = ValidationContext(allow_fetching=True) 
+                    pages = list(reader.root['/Pages']['/Kids'])
+                    for sig in reader.embedded_signatures:
                         try:
                             page_ref = sig.sig_field.get('/P')
                             page_num = pages.index(page_ref)
-                            
-                            rect = sig.sig_field.get('/Rect')
-                            if isinstance(rect, ArrayObject): rect = [float(v) for v in rect]
-                            
-                            status = validate_pdf_signature(sig, vc, skip_diff=True)
+                            rect = [float(v) for v in sig.sig_field.get('/Rect', [])]
+                            status = validate_pdf_signature(sig, validation_context, skip_diff=True)
                             self.signatures.append(SignatureDetails(sig, status, page_num, rect))
-                        except (ValueError, KeyError) as e:
-                            print(f"Could not locate signature '{sig.field_name}': {e}")
-                            status = validate_pdf_signature(sig, vc, skip_diff=True)
+                        except (ValueError, KeyError, IndexError):
+                            status = validate_pdf_signature(sig, validation_context, skip_diff=True)
                             self.signatures.append(SignatureDetails(sig, status, -1, None))
             except Exception as e:
+                # This is not a critical failure; the PDF might just not be analyzable.
                 print(f"Could not analyze for signatures: {e}")
 
             self.current_file_path = file_path; self.doc = fitz.open(file_path); self.current_page = 0
-            self.config.add_recent_file(file_path); self.config.set_last_folder(os.path.dirname(file_path)); self.config.save()
+            self.config.add_recent_file(file_path); self.config.set_last_folder(os.path.dirname(file_path))
             
             self.emit("document-changed", self.doc)
-            if self.signatures:
-                self.emit("signatures-found", self.signatures)
-            elif self.active_cert_path and show_toast:
-                self.emit("toast-request", self._("toast_select_area"), None, None)
+            if self.signatures: self.emit("signatures-found", self.signatures)
+            elif self.active_cert_path and show_toast: self.emit("toast-request", self._("toast_select_area"), None, None)
 
             self.reset_signature_state(); self.display_page(0)
             
         except Exception as e:
-            self.emit("toast-request", self._("open_pdf_error").format(e), None, None)
-            self.doc = None; self.signatures = []; 
+            show_error_dialog(self.window, self._("error"), self._("open_pdf_error").format(e))
+            self.doc = None; self.signatures = []
             self.emit("document-changed", None)
 
     def on_show_signatures_clicked(self, action, param):
+        """Focuses the sidebar on the list of existing signatures."""
         if self.window:
-            if not self.window.flap.get_reveal_flap():
-                self.window.flap.set_reveal_flap(True)
+            if not self.window.flap.get_reveal_flap(): self.window.flap.set_reveal_flap(True)
             self.window.hide_signature_info()
             self.window.sidebar.focus_on_signatures()
             
     def on_signature_selected(self, sidebar, sig_details):
+        """Shows details for a selected signature."""
         if sig_details.page_num != -1:
             self.display_page(sig_details.page_num, keep_sidebar_view=True)
             if sig_details.rect:
                 self.highlight_rect = sig_details.rect
                 self.emit("highlight-rect-changed", self.highlight_rect)
+                if self.window:
+                    self.window.scroll_to_rect(sig_details.rect)
         
-        dialog = Adw.MessageDialog.new(self.window, heading=self._("sig_details_title"))
+        dialog = Adw.MessageDialog.new(self.window,
+                                       heading=self._("sig_details_title"),
+                                       body="") 
+
         validity_parts = [f"<b>{self._('sig_validity_title')}</b>"]
         if sig_details.intact and sig_details.valid:
             validity_parts.append(f"<span color='green'>{self._('sig_integrity_ok')}</span>")
@@ -216,27 +238,54 @@ class GnomeSign(Adw.Application):
                  validity_parts.append(f"<span color='orange'>{self._('sig_trust_untrusted')}</span>")
         else:
             validity_parts.append(f"<span color='red'>{self._('sig_integrity_error')}</span>")
+        
         validity_text = "\n".join(validity_parts)
+        
         signer_esc = GLib.markup_escape_text(sig_details.signer_name)
         issuer_esc = GLib.markup_escape_text(sig_details.issuer_cn)
         serial_esc = GLib.markup_escape_text(sig_details.serial)
+        
         details_parts = [
             validity_text,
-            f"<b>{self._('signer')}:</b> {signer_esc}",
+            f"\n<b>{self._('signer')}:</b> {signer_esc}",
             f"<b>{self._('sign_date')}:</b> {sig_details.sign_time.strftime('%Y-%m-%d %H:%M:%S %Z') if sig_details.sign_time else 'N/A'}"
         ]
-        if sig_details.reason: details_parts.append(f"<b>{self._('signature_reason_label')}:</b> {GLib.markup_escape_text(sig_details.reason)}")
-        if sig_details.location: details_parts.append(f"<b>{self._('signature_location_label')}:</b> {GLib.markup_escape_text(sig_details.location)}")
-        if sig_details.contact_info: details_parts.append(f"<b>{self._('signature_contact_label')}:</b> {GLib.markup_escape_text(sig_details.contact_info)}")
-        details_parts.extend([f"\n<b>{self._('issuer')}:</b> {issuer_esc}", f"<b>{self._('serial')}:</b> {serial_esc}"])
+        
+        if sig_details.reason:
+            details_parts.append(f"<b>{self._('signature_reason_label')}:</b> {GLib.markup_escape_text(sig_details.reason)}")
+
+        if sig_details.location:
+            details_parts.append(f"<b>{self._('signature_location_label')}:</b> {GLib.markup_escape_text(sig_details.location)}")
+            
+        if sig_details.contact_info:
+            details_parts.append(f"<b>{self._('signature_contact_label')}:</b> {GLib.markup_escape_text(sig_details.contact_info)}")
+
+        details_parts.extend([
+            f"\n<b>{self._('issuer')}:</b> {issuer_esc}",
+            f"<b>{self._('serial')}:</b> {serial_esc}"
+        ])
+        
         details_text = "\n".join(details_parts)
-        body_label = Gtk.Label(markup=details_text, wrap=True, justify=Gtk.Justification.CENTER, xalign=0, size_request=(350, 0))
+        
+        body_label = Gtk.Label(
+            use_markup=True,
+            label=details_text,
+            wrap=True,
+            xalign=0, 
+            selectable=True,
+            justify=Gtk.Justification.CENTER
+        )
+        
         dialog.set_extra_child(body_label)
+        
         dialog.add_response("ok", self._("accept"))
-        dialog.set_default_response("ok"); dialog.set_close_response("ok")
+        dialog.set_default_response("ok")
+        dialog.set_close_response("ok")
+        
         dialog.present()
 
     def on_open_pdf_clicked(self, action, param):
+        """Handles the 'Open' action, showing a file chooser."""
         def on_response(dialog, response):
             if response == Gtk.ResponseType.ACCEPT:
                 if file := dialog.get_file(): self.open_file_path(file.get_path())
@@ -248,79 +297,106 @@ class GnomeSign(Adw.Application):
         file_chooser.connect("response", on_response); file_chooser.show()
 
     def on_open_recent_clicked(self, action, param):
+        """Handles opening a file from the 'Open Recent' menu."""
         file_path = param.get_string()
         if os.path.exists(file_path): self.open_file_path(file_path)
         else:
             self.emit("toast-request", f"File not found: {file_path}", None, None)
-            self.config.remove_recent_file(file_path); self.config.save(); self.emit("language-changed")
+            self.config.remove_recent_file(file_path); self.emit("language-changed")
 
     def on_preferences_clicked(self, action, param):
+        """Shows the preferences window."""
         if self.preferences_window and self.preferences_window.is_visible():
             self.preferences_window.present()
             return
-        page_name = 'certificates' if action.get_name() == 'manage_certs' else None
         from ui.preferences_window import PreferencesWindow
+        page_name = 'certificates' if action.get_name() == 'manage_certs' else None
         self.preferences_window = PreferencesWindow(application=self, initial_page_name=page_name)
+        self.preferences_window.connect("destroy", lambda w: self.config.save())
         self.preferences_window.present()
 
     def on_edit_stamps_clicked(self, action, param):
+        """Shows the stamp editor dialog."""
         from ui.stamp_editor_dialog import StampEditorDialog
         dialog = StampEditorDialog(parent_window=self.window, app=self)
+        dialog.connect("destroy", lambda w: self.config.save())
         dialog.present()
     
     def on_lang_change_state(self, action, value):
+        """Handles changing the application language."""
         new_lang = value.get_string()
         if action.get_state().get_string() != new_lang:
             action.set_state(value); self.i18n.set_language(new_lang)
             self.config.set_language(new_lang); self.emit('language-changed')
 
     def on_sign_document_clicked(self, action=None, param=None):
+        """Handles the main 'Sign Document' action."""
         if not self.active_cert_path:
             self.emit("toast-request", self._("no_cert_selected_error"), None, None); return
         if not all([self.doc, self.signature_rect, self.current_file_path]):
             self.emit("toast-request", self._("need_pdf_and_area"), None, None); return
         password = Secret.password_lookup_sync(KEYRING_SCHEMA, {"path": self.active_cert_path}, None)
-        if not password: self.emit("toast-request", self._("credential_load_error"), None, None); return
+        if not password:
+            show_error_dialog(self.window, self._("error"), self._("credential_load_error"))
+            return
+        
         private_key_pyca, certificate_pyca = self.cert_manager.get_credentials(self.active_cert_path, password)
-        if not (private_key_pyca and certificate_pyca): self.emit("toast-request", self._("credential_load_error"), None, None); return
+        if not (private_key_pyca and certificate_pyca):
+            show_error_dialog(self.window, self._("error"), self._("credential_load_error"))
+            return
 
+        try:
+            # The signing process itself
+            output_path = self._perform_signing(private_key_pyca, certificate_pyca)
+            
+            # Show success toast
+            self.emit("toast-request", self._("sign_success_message").format(os.path.basename(output_path)), self._("open"), lambda: self.open_file_path(output_path, show_toast=False))
+        except Exception as e:
+            show_error_dialog(self.window, self._("sig_error_title"), self._("sig_error_message").format(e))
+            import traceback; traceback.print_exc()
+
+    def _perform_signing(self, private_key_pyca, certificate_pyca):
+        """Encapsulates the pyHanko signing logic."""
         signing_key_asn1 = translate_pyca_cryptography_key_to_asn1(private_key_pyca)
         signer_cert_asn1 = translate_pyca_cryptography_cert_to_asn1(certificate_pyca)
+        
         output_path = self.current_file_path.replace(".pdf", "-signed.pdf"); version = 1
         while os.path.exists(output_path):
             output_path = f"{os.path.splitext(self.current_file_path)[0]}-signed-{version}.pdf"; version += 1
-        try:
-            signer = signers.SimpleSigner(signing_cert=signer_cert_asn1, signing_key=signing_key_asn1, cert_registry=SimpleCertificateStore.from_certs([signer_cert_asn1]))
-            x, y, w, h = self.signature_rect
-            view_width = self.window.drawing_area.get_width()
-            scale = self.page.rect.width / view_width if view_width > 0 else 1
-            fitz_rect = fitz.Rect(x * scale, y * scale, (x + w) * scale, (y + h) * scale)
-            parsed_pango_text = self.get_parsed_stamp_text(certificate_pyca)
-            html_content = pango_to_html(parsed_pango_text)
-            stamp_creator = HtmlStamp(html_content=html_content, width=fitz_rect.width, height=fitz_rect.height)
-            field_name = f'Signature-{int(datetime.now().timestamp() * 1000)}'
-            meta_kwargs = {'field_name': field_name}
-            if reason := self.config.get_signature_reason(): meta_kwargs['reason'] = reason
-            if location := self.config.get_signature_location(): meta_kwargs['location'] = location
-            meta = PdfSignatureMetadata(**meta_kwargs)
-            pdf_box_y0 = self.page.rect.height - fitz_rect.y1
-            pdf_box_y1 = self.page.rect.height - fitz_rect.y0
-            new_field_spec = fields.SigFieldSpec(sig_field_name=field_name, on_page=self.current_page, box=(fitz_rect.x0, pdf_box_y0, fitz_rect.x1, pdf_box_y1))
-            pdf_signer = PdfSigner(meta, signer, stamp_style=stamp_creator.get_style(), new_field_spec=new_field_spec)
-            
-            with open(self.current_file_path, "rb") as orig_f, open(output_path, "wb") as out_f:
-                writer = IncrementalPdfFileWriter(orig_f, strict=False)
-                pdf_signer.sign_pdf(writer, output=out_f)
-
-            self.emit("toast-request", self._("sign_success_message").format(os.path.basename(output_path)), self._("open"), lambda: self.open_file_path(output_path, show_toast=False))
-        except Exception as e:
-            self.emit("toast-request", self._("sig_error_message").format(e), None, None)
-            import traceback; traceback.print_exc()
         
+        signer = signers.SimpleSigner(signing_cert=signer_cert_asn1, signing_key=signing_key_asn1, cert_registry=SimpleCertificateStore.from_certs([signer_cert_asn1]))
+        x, y, w, h = self.signature_rect
+        view_width = self.window.drawing_area.get_width()
+        scale = self.page.rect.width / view_width if view_width > 0 else 1
+        fitz_rect = fitz.Rect(x * scale, y * scale, (x + w) * scale, (y + h) * scale)
+        parsed_pango_text = self.get_parsed_stamp_text(certificate_pyca)
+        html_content = pango_to_html(parsed_pango_text)
+        stamp_creator = HtmlStamp(html_content=html_content, width=fitz_rect.width, height=fitz_rect.height)
+        
+        meta = PdfSignatureMetadata(
+            field_name=f'Signature-{int(datetime.now().timestamp() * 1000)}',
+            reason=self.config.get_signature_reason() or None,
+            location=self.config.get_signature_location() or None
+        )
+        
+        pdf_box_y0 = self.page.rect.height - fitz_rect.y1
+        pdf_box_y1 = self.page.rect.height - fitz_rect.y0
+        new_field_spec = fields.SigFieldSpec(sig_field_name=meta.field_name, on_page=self.current_page, box=(fitz_rect.x0, pdf_box_y0, fitz_rect.x1, pdf_box_y1))
+        
+        pdf_signer = PdfSigner(meta, signer, stamp_style=stamp_creator.get_style(), new_field_spec=new_field_spec)
+        
+        with open(self.current_file_path, "rb") as orig_f, open(output_path, "wb") as out_f:
+            writer = IncrementalPdfFileWriter(orig_f, strict=False)
+            pdf_signer.sign_pdf(writer, output=out_f)
+            
+        return output_path
+
     def on_about_clicked(self, action, param):
+        """Shows the 'About' dialog."""
         create_about_dialog(self.window, self._)
         
     def reset_signature_state(self):
+        """Resets all properties related to the current signature drawing/selection."""
         self.signature_rect = None
         self.start_x, self.start_y, self.end_x, self.end_y = -1, -1, -1, -1
         self.is_dragging_rect = False
@@ -328,29 +404,33 @@ class GnomeSign(Adw.Application):
         self.emit("signature-state-changed")
 
     def display_page(self, page_num, keep_sidebar_view=False):
+        """Loads and displays a specific page of the current document."""
         if self.highlight_rect:
             self.highlight_rect = None
             self.emit("highlight-rect-changed", None)
         if not self.doc or not (0 <= page_num < len(self.doc)):
-            self.page, self.doc, self.current_file_path, self.display_pixbuf = None, None, None, None
-            self.signatures = []
+            self.page = None; self.doc = None; self.current_file_path = None; self.display_pixbuf = None; self.signatures = []
             self.emit("document-changed", None)
         else:
             self.current_page = page_num
             self.page = self.doc.load_page(page_num)
             self.display_pixbuf = None
-            self.emit("page-changed", self.page, self.current_page, len(self.doc))
+            self.emit("page-changed", self.page, self.current_page, len(self.doc), keep_sidebar_view)
     
     def on_prev_page_clicked(self, button):
+        """Navigates to the previous page."""
         if self.doc and self.current_page > 0:
             self.reset_signature_state(); self.display_page(self.current_page - 1)
     
     def on_next_page_clicked(self, button):
+        """Navigates to the next page."""
         if self.doc and self.current_page < len(self.doc) - 1:
             self.reset_signature_state(); self.display_page(self.current_page + 1)
             
     def on_jump_to_page_clicked(self, button):
+        """Shows a dialog to jump to a specific page."""
         if not self.doc: return
+        # This can be refactored into ui/dialogs.py if needed, but is simple enough here.
         dialog = Gtk.Dialog(title=self._("jump_to_page_title"), transient_for=self.window, modal=True)
         dialog.add_buttons(self._("cancel"), Gtk.ResponseType.CANCEL, self._("accept"), Gtk.ResponseType.OK)
         content_area = dialog.get_content_area(); content_area.set_spacing(10); content_area.set_margin_top(10); content_area.set_margin_bottom(10); content_area.set_margin_start(10); content_area.set_margin_end(10)
@@ -365,6 +445,7 @@ class GnomeSign(Adw.Application):
         dialog.connect("response", on_response); dialog.present()
 
     def on_drag_begin(self, gesture, start_x, start_y):
+        """Handles the beginning of a drag gesture on the document view."""
         self.highlight_rect = None; self.emit("highlight-rect-changed", None)
         if self.signature_rect:
             x, y, w, h = self.signature_rect
@@ -375,6 +456,7 @@ class GnomeSign(Adw.Application):
         self.emit("signature-state-changed")
 
     def on_drag_update(self, gesture, offset_x, offset_y):
+        """Handles the update of a drag gesture."""
         success, start_point_x, start_point_y = gesture.get_start_point()
         if not success: return
         current_x, current_y = start_point_x + offset_x, start_point_y + offset_y
@@ -385,6 +467,7 @@ class GnomeSign(Adw.Application):
         self.emit("signature-state-changed")
 
     def on_drag_end(self, gesture, offset_x, offset_y):
+        """Handles the end of a drag gesture, finalizing the signature rectangle."""
         if not self.is_dragging_rect:
             x1, y1 = min(self.start_x, self.end_x), min(self.start_y, self.end_y)
             width, height = abs(self.start_x - self.end_x), abs(self.start_y - self.end_y)
@@ -393,12 +476,12 @@ class GnomeSign(Adw.Application):
         self.emit("signature-state-changed")
 
     def get_parsed_stamp_text(self, certificate, override_template=None):
+        """Parses a signature template, replacing placeholders with actual certificate data."""
         if override_template is not None:
             template_text = override_template
         else:
             template_obj = self.config.get_active_template()
-            if not template_obj:
-                return "Error: No active signature template found."
+            if not template_obj: return "Error: No active signature template found."
             template_text = template_obj.get("template", template_obj.get("template_es", ""))
 
         def get_cn(name):
@@ -415,28 +498,28 @@ class GnomeSign(Adw.Application):
         return text
 
     def set_active_certificate(self, path):
-        """Establece el certificado activo, guarda la config y notifica a la UI."""
+        """Sets the active certificate, saves the config, and notifies the UI."""
         self.active_cert_path = path
         self.config.set_active_cert_path(path)
         self.emit("certificates-changed")
 
     def add_certificate(self, pkcs12_path, password):
-        """Añade un nuevo certificado, lo guarda y notifica a la UI."""
+        """Adds a new certificate, saves it, and notifies the UI."""
         common_name = self.cert_manager.test_certificate(pkcs12_path, password)
         if common_name:
             Secret.password_store_sync(KEYRING_SCHEMA, {"path": pkcs12_path}, Secret.COLLECTION_DEFAULT, f"Certificate password for {common_name}", password, None)
             self.config.add_cert_path(pkcs12_path)
             self.config.set_last_folder(os.path.dirname(pkcs12_path))
-            self.config.save()
             self.cert_manager.add_cert_path(pkcs12_path)
             self.set_active_certificate(pkcs12_path)
+            self.config.save() # Save immediately after a successful addition
             return True
         else:
-            self.emit("toast-request", self._("bad_password_or_file"), None, None)
+            show_error_dialog(self.window, self._("error"), self._("bad_password_or_file"))
             return False
 
     def remove_certificate(self, path):
-        """Elimina un certificado y notifica a la UI."""
+        """Removes a certificate and notifies the UI."""
         self.cert_manager.remove_credentials_from_keyring(path)
         self.config.remove_cert_path(path)
         self.cert_manager.remove_cert_path(path)
@@ -447,14 +530,11 @@ class GnomeSign(Adw.Application):
             self.set_active_certificate(new_path)
         else:
             self.emit("certificates-changed")
+        
+        self.config.save() # Save immediately after a removal
 
     def request_add_new_certificate(self):
-        """
-        Gestiona el flujo completo de añadir un nuevo certificado:
-        1. Muestra el selector de ficheros.
-        2. Muestra el diálogo de contraseña.
-        3. Llama a la lógica de negocio para añadir el certificado.
-        """
+        """Manages the full flow of adding a new certificate."""
         def on_file_chooser_response(dialog, response):
             if response == Gtk.ResponseType.ACCEPT:
                 if file := dialog.get_file():
@@ -464,21 +544,9 @@ class GnomeSign(Adw.Application):
                         if password is not None:
                             self.add_certificate(pkcs12_path, password)
                     
-                    create_password_dialog(
-                        self.window,
-                        self._("password"),
-                        os.path.basename(pkcs12_path),
-                        self._,
-                        on_password_response
-                    )
+                    create_password_dialog(self.window, self._("password"), os.path.basename(pkcs12_path), self._, on_password_response)
 
-        file_chooser = Gtk.FileChooserNative.new(
-            self._("open_cert_dialog_title"),
-            self.window,
-            Gtk.FileChooserAction.OPEN,
-            self._("open"),
-            self._("cancel")
-        )
+        file_chooser = Gtk.FileChooserNative.new(self._("open_cert_dialog_title"), self.window, Gtk.FileChooserAction.OPEN, self._("open"), self._("cancel"))
         filter_p12 = Gtk.FileFilter()
         filter_p12.set_name(self._("p12_files"))
         filter_p12.add_pattern("*.p12"); filter_p12.add_pattern("*.pfx")

@@ -19,16 +19,7 @@ def create_about_dialog(parent, i18n_func):
     dialog.present()
 
 def create_password_dialog(parent, title, message, i18n_func, callback):
-    """
-    Creates a generic dialog to request a password for a given action.
-    
-    Args:
-        parent: The parent window for the dialog.
-        title: The title of the dialog.
-        message: A message to display, typically the file name.
-        i18n_func: The translation function.
-        callback: The function to call with the entered password (or None).
-    """
+    """Creates a generic dialog to request a password for a given action."""
     dialog = Gtk.Dialog(title=title, transient_for=parent, modal=True)
     dialog.add_buttons(i18n_func("cancel"), Gtk.ResponseType.CANCEL, i18n_func("accept"), Gtk.ResponseType.OK)
     ok_button = dialog.get_widget_for_response(Gtk.ResponseType.OK)
@@ -51,4 +42,17 @@ def create_password_dialog(parent, title, message, i18n_func, callback):
         d.destroy()
 
     dialog.connect("response", on_response)
+    dialog.present()
+
+def show_error_dialog(parent, title, message):
+    """Displays a simple, modal error dialog."""
+    dialog = Gtk.MessageDialog(
+        transient_for=parent,
+        modal=True,
+        message_type=Gtk.MessageType.ERROR,
+        buttons=Gtk.ButtonsType.OK,
+        text=title
+    )
+    dialog.set_secondary_text(message)
+    dialog.connect("response", lambda d, r: d.destroy())
     dialog.present()
