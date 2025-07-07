@@ -85,20 +85,28 @@ class StampEditorDialog(Gtk.Dialog):
         
         bold_btn = Gtk.Button.new_from_icon_name("format-text-bold-symbolic"); bold_btn.connect("clicked", lambda b: self._toggle_pango_tag("b"))
         italic_btn = Gtk.Button.new_from_icon_name("format-text-italic-symbolic"); italic_btn.connect("clicked", lambda b: self._toggle_pango_tag("i"))
+        underlined_btn = Gtk.Button.new_from_icon_name("format-text-underline-symbolic"); underlined_btn.connect("clicked", lambda b: self._toggle_pango_tag("u"))
+
+        bold_btn.set_tooltip_text(self.i18n._("stamp_editor_bold_tooltip"))
+        italic_btn.set_tooltip_text(self.i18n._("stamp_editor_italic_tooltip"))
+        underlined_btn.set_tooltip_text(self.i18n._("stamp_editor_underline_tooltip"))
 
         font_combo = Gtk.ComboBoxText.new(); font_combo.append("placeholder_id", self.i18n._("font"))
         for font in ["Times-Roman", "Helvetica", "Courier"]: font_combo.append_text(font)
         font_combo.set_active_id("placeholder_id"); font_combo.connect("changed", self._on_font_changed)
+        font_combo.set_tooltip_text(self.i18n._("stamp_editor_font_tooltip"))
 
         size_combo = Gtk.ComboBoxText.new()
         self.pango_size_map = {self.i18n._("size_small"): "small", self.i18n._("size_normal"): "medium", self.i18n._("size_large"): "large", self.i18n._("size_huge"): "x-large"}
         size_combo.append("placeholder_id", self.i18n._("size"))
         for label in self.pango_size_map: size_combo.append_text(label)
         size_combo.set_active_id("placeholder_id"); size_combo.connect("changed", self._on_size_changed)
+        size_combo.set_tooltip_text(self.i18n._("stamp_editor_size_tooltip"))
 
         color_btn = Gtk.ColorButton.new(); color_btn.connect("color-set", lambda b: self._apply_span_tag("color", self._rgba_to_hex(b.get_rgba())))
+        color_btn.set_tooltip_text(self.i18n._("stamp_editor_color_tooltip"))
         
-        toolbar.append(bold_btn); toolbar.append(italic_btn); toolbar.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        toolbar.append(bold_btn); toolbar.append(italic_btn); toolbar.append(underlined_btn); toolbar.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
         toolbar.append(font_combo); toolbar.append(size_combo); toolbar.append(color_btn)
         return toolbar
 
@@ -313,10 +321,6 @@ class StampEditorDialog(Gtk.Dialog):
         else:
             preview_text = re.sub(r'\$\$SIGNDATE=.*?Z\$\$', "24/12/2025", text.replace("$$SUBJECTCN$$", "Subject Name").replace("$$ISSUERCN$$", "Issuer Name").replace("$$CERTSERIAL$$", "123456789"))
         
-        cr.rectangle(10, 10, width - 20, h - 20)
-        cr.set_source_rgb(1.0, 1.0, 1.0); cr.fill_preserve()
-        cr.set_source_rgb(0.0, 0.5, 0.0); cr.set_line_width(1.5); cr.stroke()
-
         layout = PangoCairo.create_layout(cr)
         layout.set_width(Pango.units_from_double(width - 40))
         layout.set_alignment(Pango.Alignment.CENTER)

@@ -157,8 +157,13 @@ class GnomeSign(Adw.Application):
             else: action.connect("activate", callback)
             self.add_action(action)
 
+        sign_action = Gio.SimpleAction.new("sign", None)
+        sign_action.connect("activate", self.on_sign_document_clicked)
+        sign_action.set_enabled(False) 
+        self.add_action(sign_action)
+        
         simple_actions = [
-            ("open", self.on_open_pdf_clicked), ("sign", self.on_sign_document_clicked), 
+            ("open", self.on_open_pdf_clicked), 
             ("preferences", self.on_preferences_clicked), ("manage_certs", self.on_preferences_clicked), 
             ("about", self.on_about_clicked), ("edit_stamps", self.on_edit_stamps_clicked),
             ("show_signatures", self.on_show_signatures_clicked)
@@ -215,6 +220,12 @@ class GnomeSign(Adw.Application):
             
     def on_signature_selected(self, sidebar, sig_details):
         """Shows details for a selected signature."""
+        if self.window:
+            self.window.hide_signature_info()
+        if self.window:
+            if not self.window.flap.get_reveal_flap():
+                self.window.flap.set_reveal_flap(True)
+            self.window.sidebar.select_signature(sig_details)    
         if sig_details.page_num != -1:
             self.display_page(sig_details.page_num, keep_sidebar_view=True)
             if sig_details.rect:
@@ -395,6 +406,13 @@ class GnomeSign(Adw.Application):
         """Shows the 'About' dialog."""
         create_about_dialog(self.window, self._)
         
+    def _update_sign_action_state(self):
+        """Centralized method to update the enabled state of the sign action."""
+        can_sign = self.doc is not None and self.signature_rect is not None and self.active_cert_path is not None
+        sign_action = self.lookup_action("sign")
+        if sign_action:
+            sign_action.set_enabled(can_sign)
+    
     def reset_signature_state(self):
         """Resets all properties related to the current signature drawing/selection."""
         self.signature_rect = None
@@ -402,6 +420,7 @@ class GnomeSign(Adw.Application):
         self.is_dragging_rect = False
         self.highlight_rect = None
         self.emit("signature-state-changed")
+        self._update_sign_action_state()
 
     def display_page(self, page_num, keep_sidebar_view=False):
         """Loads and displays a specific page of the current document."""
@@ -474,6 +493,7 @@ class GnomeSign(Adw.Application):
             self.signature_rect = (x1, y1, width, height) if width > 5 and height > 5 else None
         self.is_dragging_rect = False
         self.emit("signature-state-changed")
+        self._update_sign_action_state()
 
     def get_parsed_stamp_text(self, certificate, override_template=None):
         """Parses a signature template, replacing placeholders with actual certificate data."""
@@ -502,6 +522,7 @@ class GnomeSign(Adw.Application):
         self.active_cert_path = path
         self.config.set_active_cert_path(path)
         self.emit("certificates-changed")
+        self._update_sign_action_state()
 
     def add_certificate(self, pkcs12_path, password):
         """Adds a new certificate, saves it, and notifies the UI."""

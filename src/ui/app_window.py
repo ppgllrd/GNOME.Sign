@@ -34,12 +34,12 @@ class AppWindow(Adw.ApplicationWindow):
         self.sidebar_button = Gtk.ToggleButton(icon_name="view-list-symbolic"); self.header_bar.pack_start(self.sidebar_button)
         self.title_widget = Adw.WindowTitle(title=app._("window_title")); self.header_bar.set_title_widget(self.title_widget)
         self.open_button = Gtk.Button(icon_name="document-open-symbolic"); self.header_bar.pack_start(self.open_button)
-        nav_box = Gtk.Box(spacing=6); nav_box.get_style_context().add_class("linked")
+        self.nav_box = Gtk.Box(spacing=6); self.nav_box.get_style_context().add_class("linked")
         self.prev_page_button = Gtk.Button(icon_name="go-previous-symbolic")
         self.page_entry_button = Gtk.Button(label="- / -"); self.page_entry_button.get_style_context().add_class("flat")
         self.next_page_button = Gtk.Button(icon_name="go-next-symbolic")
-        nav_box.append(self.prev_page_button); nav_box.append(self.page_entry_button); nav_box.append(self.next_page_button)
-        self.header_bar.pack_start(nav_box)
+        self.nav_box.append(self.prev_page_button); self.nav_box.append(self.page_entry_button); self.nav_box.append(self.next_page_button)
+        self.header_bar.pack_start(self.nav_box)
         
         self.activity_spinner = Gtk.Spinner(); self.header_bar.pack_end(self.activity_spinner)
         self.menu_button = Gtk.MenuButton(icon_name="open-menu-symbolic"); self.header_bar.pack_end(self.menu_button)
@@ -111,6 +111,7 @@ class AppWindow(Adw.ApplicationWindow):
         is_doc_loaded = doc is not None
         self.stack.set_visible_child_name("pdf_view" if is_doc_loaded else "welcome_view")
         self.sidebar_button.set_sensitive(is_doc_loaded)
+        self.nav_box.set_sensitive(is_doc_loaded)
         if not is_doc_loaded and self.flap.get_reveal_flap(): self.flap.set_reveal_flap(False)
         self.title_widget.set_subtitle(os.path.basename(app.current_file_path) if is_doc_loaded and app.current_file_path else "")
         self.sidebar.populate(doc, app.signatures)

@@ -103,6 +103,8 @@ class Sidebar(Gtk.Box):
             item_box.set_halign(Gtk.Align.CENTER)
             item_box.set_margin_top(5)
             item_box.set_margin_bottom(5)
+            item_box.set_margin_start(5)
+            item_box.set_margin_end(5)
             item_box.append(picture)
             item_box.append(label)
             row.set_child(item_box)
@@ -113,6 +115,7 @@ class Sidebar(Gtk.Box):
             self.signatures_button.set_visible(True)
             for sig in signatures:
                 row = Adw.ActionRow.new()
+                row.sig_object = sig 
                 row.set_title(sig.signer_name)
                 row.set_subtitle(sig.sign_time.strftime('%Y-%m-%d %H:%M:%S') if sig.sign_time else "No timestamp")
                 row.set_activatable(True)
@@ -165,3 +168,33 @@ class Sidebar(Gtk.Box):
             adj = self.signatures_scrolled_window.get_vadjustment()
             if adj: 
                 adj.set_value(0) # Scroll to the top of the signature list
+
+    def select_signature(self, sig_to_select):
+        """Programmatically selects a signature in the list and ensures it's visible."""
+        # 1. Asegurarse de que la vista de firmas está activa
+        self.stack.set_visible_child_name("signatures")
+        self.signatures_button.set_active(True)
+
+        # --- INICIO CORRECCIÓN: Iteración correcta sobre Gtk.ListBox ---
+        target_row = None
+        # Obtenemos el primer hijo y vamos iterando hasta que no haya más.
+        current_row = self.signatures_listbox.get_row_at_index(0)
+        while current_row:
+            if hasattr(current_row, 'sig_object') and current_row.sig_object is sig_to_select:
+                target_row = current_row
+                break
+            # Avanzamos al siguiente "hermano" en la lista
+            current_row = current_row.get_next_sibling()
+        # --- FIN CORRECCIÓN ---
+        
+        # 3. Seleccionar la fila y hacer scroll hacia ella
+        if target_row:
+            target_row.grab_focus()
+
+            def scroll_to_row():
+                adj = self.signatures_scrolled_window.get_vadjustment()
+                if adj and target_row.get_allocated_height() > 0:
+                    row_y = target_row.get_allocation().y
+                    adj.set_value(row_y - adj.get_page_size() / 2 + target_row.get_allocated_height() / 2)
+                return GLib.SOURCE_REMOVE
+            GLib.idle_add(scroll_to_row)
