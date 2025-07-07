@@ -65,7 +65,7 @@ class PangoToHtmlConverter(HTMLParser):
         if len(self.style_stack) > 1: self.style_stack.pop()
     def handle_data(self, data):
         if not data.strip(): self.html_parts.append(data); return
-        styles = self.get_current_styles(); escaped_data = data.replace('&', '&amp;').replace('"', '&quot;').replace("'", '&#39;').replace('<', '&lt;').replace('>', '&gt;')
+        styles = self.get_current_styles(); escaped_data = replace('"', '&quot;').replace("'", '&#39;')
         if styles: style_str = "; ".join(f"{k}: {v}" for k, v in styles.items()); self.html_parts.append(f'<span style="{style_str}">{escaped_data}</span>')
         else: self.html_parts.append(escaped_data)
     def get_html(self) -> str: return "".join(self.html_parts).replace('\n', '<br/>')
