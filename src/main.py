@@ -565,9 +565,9 @@ class GnomeSign(Adw.Application):
                         if password is not None:
                             self.add_certificate(pkcs12_path, password)
                     
-                    create_password_dialog(self.window, self._("password"), os.path.basename(pkcs12_path), self._, on_password_response)
+                    create_password_dialog(self.preferences_window, self._("password"), os.path.basename(pkcs12_path), self._, on_password_response)
 
-        file_chooser = Gtk.FileChooserNative.new(self._("open_cert_dialog_title"), self.window, Gtk.FileChooserAction.OPEN, self._("open"), self._("cancel"))
+        file_chooser = Gtk.FileChooserNative.new(self._("open_cert_dialog_title"), self.preferences_window, Gtk.FileChooserAction.OPEN, self._("open"), self._("cancel"))
         filter_p12 = Gtk.FileFilter()
         filter_p12.set_name(self._("p12_files"))
         filter_p12.add_pattern("*.p12"); filter_p12.add_pattern("*.pfx")
