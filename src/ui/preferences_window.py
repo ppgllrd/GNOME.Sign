@@ -103,6 +103,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.location_row.set_text(self.app.config.get_signature_location())
         
         cert_details_list = self.app.cert_manager.get_all_certificate_details()
+        cert_details_list = sorted(cert_details_list, key=lambda cert: cert['subject_cn'].lower())
         radio_group = None
 
         for cert in cert_details_list:
