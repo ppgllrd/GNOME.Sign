@@ -12,8 +12,11 @@ class PreferencesWindow(Adw.PreferencesWindow):
         super().__init__(**kwargs)
         self.app = self.get_application()
         self.i18n = self.app.i18n
+
+        self.set_transient_for(self.app.window)
+
         self.set_destroy_with_parent(True)
-        self.set_modal(True) 
+        self.set_modal(False) 
         self.set_hide_on_close(True)
         
         self._build_ui()
