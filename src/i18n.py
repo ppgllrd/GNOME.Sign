@@ -55,7 +55,13 @@ class I18NManager:
                 "sig_integrity_error": "La firma es inválida o el documento ha sido modificado.",
                 "sig_trust_ok": "El certificado del firmante es de confianza.",
                 "sig_trust_untrusted": "No se pudo establecer la confianza en el certificado del firmante.",
-                "sig_revoked": "El certificado del firmante ha sido revocado."
+                "sig_revoked": "El certificado del firmante ha sido revocado.",
+                "stamp_editor_bold_tooltip": "Negrita",
+                "stamp_editor_italic_tooltip": "Cursiva",
+                "stamp_editor_underline_tooltip": "Subrayado",
+                "stamp_editor_font_tooltip": "Fuente",
+                "stamp_editor_size_tooltip": "Tamaño de fuente",
+                "stamp_editor_color_tooltip": "Color de texto"
             },
             "en": {
                 "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
@@ -108,7 +114,13 @@ class I18NManager:
                 "sig_integrity_error": "The signature is invalid or the document has been modified.",
                 "sig_trust_ok": "The signer's certificate is trusted.",
                 "sig_trust_untrusted": "Could not establish trust in the signer's certificate.",
-                "sig_revoked": "The signer's certificate has been revoked."
+                "sig_revoked": "The signer's certificate has been revoked.",
+                "stamp_editor_bold_tooltip": "Bold",
+                "stamp_editor_italic_tooltip": "Italic",
+                "stamp_editor_underline_tooltip": "Underline",
+                "stamp_editor_font_tooltip": "Font",
+                "stamp_editor_size_tooltip": "Font Size",
+                "stamp_editor_color_tooltip": "Text Color"
             }
         }
 
