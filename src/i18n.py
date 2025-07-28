@@ -61,7 +61,8 @@ class I18NManager:
                 "stamp_editor_underline_tooltip": "Subrayado",
                 "stamp_editor_font_tooltip": "Fuente",
                 "stamp_editor_size_tooltip": "Tamaño de fuente",
-                "stamp_editor_color_tooltip": "Color de texto"
+                "stamp_editor_color_tooltip": "Color de texto",
+                "save_pdf_dialog_title": "Guardar PDF Firmado"
             },
             "en": {
                 "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
@@ -120,7 +121,8 @@ class I18NManager:
                 "stamp_editor_underline_tooltip": "Underline",
                 "stamp_editor_font_tooltip": "Font",
                 "stamp_editor_size_tooltip": "Font Size",
-                "stamp_editor_color_tooltip": "Text Color"
+                "stamp_editor_color_tooltip": "Text Color",
+                "save_pdf_dialog_title": "Save Signed PDF"
             }
         }
 

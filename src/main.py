@@ -8,6 +8,7 @@ from gi.repository import Gtk, Adw, Gio, Secret, GLib, GObject
 import fitz, sys, os, re
 from datetime import datetime, timezone, timedelta
 from cryptography import x509
+from io import BytesIO
 from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign import signers, fields
@@ -28,6 +29,10 @@ from ui.stamp_editor_dialog import StampEditorDialog
 from ui.dialogs import create_password_dialog, create_about_dialog, show_error_dialog
 from stamp_creator import HtmlStamp, pango_to_html
 from pyhanko.stamp import StaticStampStyle
+
+def is_running_in_flatpak():
+    """Checks if the application is running inside a Flatpak sandbox."""
+    return os.getenv('FLATPAK_ID') is not None
 
 class SignatureDetails:
     """A data class to hold processed information about a digital signature."""
@@ -78,7 +83,6 @@ class SignatureDetails:
                     self.sign_time = attr['values'][0].native
                     break
         except (KeyError, AttributeError, IndexError, TypeError):
-            # This is not a critical error, just a missing attribute.
             pass
         if not self.sign_time and validation_status.timestamp_validity:
             self.sign_time = validation_status.timestamp_validity.timestamp
@@ -194,7 +198,6 @@ class GnomeSign(Adw.Application):
                             status = validate_pdf_signature(sig, validation_context, skip_diff=True)
                             self.signatures.append(SignatureDetails(sig, status, -1, None))
             except Exception as e:
-                # This is not a critical failure; the PDF might just not be analyzable.
                 print(f"Could not analyze for signatures: {e}")
 
             self.current_file_path = file_path; self.doc = fitz.open(file_path); self.current_page = 0
@@ -356,24 +359,52 @@ class GnomeSign(Adw.Application):
             show_error_dialog(self.window, self._("error"), self._("credential_load_error"))
             return
 
-        try:
-            # The signing process itself
-            output_path = self._perform_signing(private_key_pyca, certificate_pyca)
-            
-            # Show success toast
-            self.emit("toast-request", self._("sign_success_message").format(os.path.basename(output_path)), self._("open"), lambda: self.open_file_path(output_path, show_toast=False))
-        except Exception as e:
-            show_error_dialog(self.window, self._("sig_error_title"), self._("sig_error_message").format(e))
-            import traceback; traceback.print_exc()
+        self._perform_signing(private_key_pyca, certificate_pyca)
+
+    def _generate_output_path(self, input_path):
+        """
+        Generates a unique output filename based on the input path.
+        Appends '-signed.pdf', and adds a version number if a file with that name exists.
+        
+        NOTE: In Flatpak, os.path.exists() is limited by sandbox permissions.
+        This provides a best-effort suggestion; the portal itself will prevent overwrites.
+        """
+        base_path, ext = os.path.splitext(input_path)
+        output_path = f"{base_path}-signed{ext}"
+        version = 1
+        while os.path.exists(output_path):
+            output_path = f"{base_path}-signed-{version}{ext}"
+            version += 1
+        return output_path
 
     def _perform_signing(self, private_key_pyca, certificate_pyca):
-        """Encapsulates the pyHanko signing logic."""
+        """Orchestrates the signing and saving process, adapting for Flatpak."""
+        try:
+            signed_bytes = self._get_signed_pdf_bytes_in_memory(private_key_pyca, certificate_pyca)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            show_error_dialog(self.window, self._("sig_error_title"), self._("sig_error_message").format(e))
+            return
+
+        if is_running_in_flatpak():
+            self._save_via_portal(signed_bytes)
+        else:
+            try:
+                output_path = self._generate_output_path(self.current_file_path)
+                with open(output_path, "wb") as out_f:
+                    out_f.write(signed_bytes)
+                
+                self.emit("toast-request", self._("sign_success_message").format(os.path.basename(output_path)), self._("open"), lambda: self.open_file_path(output_path, show_toast=False))
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                show_error_dialog(self.window, self._("sig_error_title"), self._("sig_error_message").format(e))
+
+    def _get_signed_pdf_bytes_in_memory(self, private_key_pyca, certificate_pyca):
+        """Encapsulates the pyHanko signing logic, returning the result as bytes."""
         signing_key_asn1 = translate_pyca_cryptography_key_to_asn1(private_key_pyca)
         signer_cert_asn1 = translate_pyca_cryptography_cert_to_asn1(certificate_pyca)
-        
-        output_path = self.current_file_path.replace(".pdf", "-signed.pdf"); version = 1
-        while os.path.exists(output_path):
-            output_path = f"{os.path.splitext(self.current_file_path)[0]}-signed-{version}.pdf"; version += 1
         
         signer = signers.SimpleSigner(signing_cert=signer_cert_asn1, signing_key=signing_key_asn1, cert_registry=SimpleCertificateStore.from_certs([signer_cert_asn1]))
         x, y, w, h = self.signature_rect
@@ -396,11 +427,48 @@ class GnomeSign(Adw.Application):
         
         pdf_signer = PdfSigner(meta, signer, stamp_style=stamp_creator.get_style(), new_field_spec=new_field_spec)
         
-        with open(self.current_file_path, "rb") as orig_f, open(output_path, "wb") as out_f:
+        output_buffer = BytesIO()
+        with open(self.current_file_path, "rb") as orig_f:
             writer = IncrementalPdfFileWriter(orig_f, strict=False)
-            pdf_signer.sign_pdf(writer, output=out_f)
-            
-        return output_path
+            pdf_signer.sign_pdf(writer, output=output_buffer)
+        return output_buffer.getvalue()
+
+    def _save_via_portal(self, content_to_save_bytes):
+        """Handles saving the signed file using the Gtk.FileChooserNative portal."""
+        suggested_path = self._generate_output_path(self.current_file_path)
+        suggested_name = os.path.basename(suggested_path)
+
+        dialog = Gtk.FileChooserNative.new(
+            self._("save_pdf_dialog_title"),
+            self.window,
+            Gtk.FileChooserAction.SAVE
+        )
+        dialog.set_modal(True)
+        dialog.set_current_name(suggested_name)
+
+        original_gfile = Gio.File.new_for_path(self.current_file_path)
+        parent_folder = original_gfile.get_parent()
+        if parent_folder:
+            dialog.set_current_folder(parent_folder)
+
+        dialog.connect("response", self._on_save_dialog_response, content_to_save_bytes)
+        dialog.show()
+
+    def _on_save_dialog_response(self, dialog, response_id, content_bytes):
+        """Callback for when the user interacts with the save dialog."""
+        if response_id == Gtk.ResponseType.ACCEPT:
+            output_gfile = dialog.get_file()
+            if output_gfile:
+                try:
+                    output_gfile.replace_contents(
+                        content_bytes, None, False, 
+                        Gio.FileCreateFlags.REPLACE_DESTINATION, None
+                    )
+                    output_path = output_gfile.get_path()
+                    self.emit("toast-request", self._("sign_success_message").format(os.path.basename(output_path)), self._("open"), lambda: self.open_file_path(output_path, show_toast=False))
+                except GLib.Error as e:
+                    show_error_dialog(self.window, self._("sig_error_title"), self._("sig_error_message").format(e))
+        dialog.destroy()
 
     def on_about_clicked(self, action, param):
         """Shows the 'About' dialog."""
@@ -449,7 +517,6 @@ class GnomeSign(Adw.Application):
     def on_jump_to_page_clicked(self, button):
         """Shows a dialog to jump to a specific page."""
         if not self.doc: return
-        # This can be refactored into ui/dialogs.py if needed, but is simple enough here.
         dialog = Gtk.Dialog(title=self._("jump_to_page_title"), transient_for=self.window, modal=True)
         dialog.add_buttons(self._("cancel"), Gtk.ResponseType.CANCEL, self._("accept"), Gtk.ResponseType.OK)
         content_area = dialog.get_content_area(); content_area.set_spacing(10); content_area.set_margin_top(10); content_area.set_margin_bottom(10); content_area.set_margin_start(10); content_area.set_margin_end(10)
@@ -533,7 +600,7 @@ class GnomeSign(Adw.Application):
             self.config.set_last_folder(os.path.dirname(pkcs12_path))
             self.cert_manager.add_cert_path(pkcs12_path)
             self.set_active_certificate(pkcs12_path)
-            self.config.save() # Save immediately after a successful addition
+            self.config.save()
             return True
         else:
             show_error_dialog(self.window, self._("error"), self._("bad_password_or_file"))
@@ -552,7 +619,7 @@ class GnomeSign(Adw.Application):
         else:
             self.emit("certificates-changed")
         
-        self.config.save() # Save immediately after a removal
+        self.config.save()
 
     def request_add_new_certificate(self):
         """Manages the full flow of adding a new certificate."""
