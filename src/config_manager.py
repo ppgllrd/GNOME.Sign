@@ -26,7 +26,7 @@ class ConfigManager:
         defaults = {
             'certificates': [], 'recent_files': [], 'signature_templates': [],
             'active_template_id': None, 'last_folder': os.path.expanduser("~"),
-            'language': "es", 'active_cert_path': None,
+            'language': "en", 'active_cert_path': None,
             'signature_reason': '', 
             'signature_location': '' 
         }
@@ -41,13 +41,13 @@ class ConfigManager:
             simple_template = { 
                 "id": simple_id, 
                 "name": "Simple", 
-                "template": "Firmado digitalmente por:\n<b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd-MM-yyyy$$" 
+                "template": "Digitally signed by:\n<b>$$SUBJECTCN$$</b>\nDate: $$SIGNDATE=dd-MM-yyyy$$" 
             }
             detailed_id = uuid.uuid4().hex
             detailed_template = { 
                 "id": detailed_id, 
-                "name": "Detallada", 
-                "template": "Firmado por: <b>$$SUBJECTCN$$</b>\nFecha: $$SIGNDATE=dd-MM-yyyy$$\nEmisor: <b>$$ISSUERCN$$</b>"
+                "name": "Detailed", 
+                "template": "Digitally signed by: <b>$$SUBJECTCN$$</b>\nDate: $$SIGNDATE=dd-MM-yyyy$$\nIssuer: <b>$$ISSUERCN$$</b>"
             }
             self.config_data['signature_templates'].extend([simple_template, detailed_template])
             self.config_data['active_template_id'] = simple_id
