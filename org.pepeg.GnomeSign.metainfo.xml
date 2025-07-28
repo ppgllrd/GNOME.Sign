@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.pepeg.GnomeSign</id>
+  <name>GnomeSign</name>
+  <summary>Sign PDF documents with digital certificates</summary>
+  <summary xml:lang="es">Firma documentos PDF con certificados digitales</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+  <description>
+    <p>GnomeSign is a simple application for signing PDF files using PKCS#12 digital certificates.</p>
+    <p xml:lang="es">GnomeSign es una aplicación sencilla para firmar ficheros PDF utilizando certificados digitales en formato PKCS#12.</p>
+  </description>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/ppgllrd/GNOME.Sign/refs/heads/main/screenshoots/screenshoot1.png</image>
+      <caption>Welcome Window</caption>
+      <caption xml:lang="es">Ventana de Bienvenida</caption>
+    </screenshot>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/ppgllrd/GNOME.Sign/refs/heads/main/screenshoots/screenshoot2.png</image>
+      <caption>Main Window signing a PDF</caption>
+      <caption xml:lang="es">Ventana Principal firmando un PDF</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/ppgllrd/GNOME.Sign/refs/heads/main/screenshoots/screenshoot3.png</image>
+      <caption>Options</caption>
+      <caption xml:lang="es">Opciones</caption>
+    </screenshot>
+  </screenshots>
+  <url type="homepage">https://github.com/ppgllrd/GNOME.Sign</url>
+  <url type="bugtracker">https://github.com/ppgllrd/GNOME.Sign/issues</url>
+  <url type="vcs-browser">https://github.com/ppgllrd/GNOME.Sign</url>
+  <launchable type="desktop-id">org.pepeg.GnomeSign.desktop</launchable>
+  <provides><binary>gnomesign</binary></provides>
+  <releases><release version="1.0" date="2024-07-24"/></releases>
+  <content_rating type="oars-1.1" />
+</component>
+

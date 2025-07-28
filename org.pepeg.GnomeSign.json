@@ -1,0 +1,39 @@
+{
+  "app-id": "org.pepeg.GnomeSign",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "48",
+  "sdk": "org.gnome.Sdk",
+  "command": "gnomesign-launcher.sh",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--filesystem=xdg-run/dconf",
+    "--talk-name=ca.desrt.dconf",
+    "--share=network"
+  ],
+  "sdk-extensions": [
+    "org.freedesktop.Sdk.Extension.rust-stable"
+  ],
+  "modules": [
+    "python-modules.json",
+    {
+      "name": "gnomesign",
+      "buildsystem": "simple",
+      "build-commands": [
+        "install -D -m 0755 gnomesign-launcher.sh /app/bin/gnomesign-launcher.sh",
+        "install -D -t /app/share/gnomesign src/*.py",
+        "install -D -t /app/share/gnomesign/ui src/ui/*.py",
+        "install -D -t /app/share/gnomesign/ui/components src/ui/components/*.py",
+        "install -D -t /app/share/icons/hicolor/scalable/apps svg/org.pepeg.GnomeSign.svg",
+        "install -D -t /app/share/applications org.pepeg.GnomeSign.desktop",
+        "install -D -t /app/share/metainfo/ org.pepeg.GnomeSign.metainfo.xml"
+      ],
+      "sources": [
+        { "type": "dir", "path": "." },
+        { "type": "file", "path": "gnomesign-launcher.sh" }
+      ]
+    }
+  ]
+}
