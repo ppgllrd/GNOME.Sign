@@ -3,14 +3,18 @@ import os
 import json
 import uuid
 from collections import deque
+from gi.repository import GLib
 
 class ConfigManager:
     """Manages loading, saving, and accessing application configuration settings."""
     MAX_RECENT_FILES = 10
 
-    def __init__(self, config_path="~/.config/gnomesign/config.json"):
+    def __init__(self):
         """Initializes the ConfigManager with the path to the configuration file."""
-        self.config_file = os.path.expanduser(config_path)
+
+        config_dir_base = GLib.get_user_config_dir() 
+        app_config_dir = os.path.join(config_dir_base, "gnomesign")
+        self.config_file = os.path.join(app_config_dir, "config.json")
         self.config_data = {}
 
     def load(self):
