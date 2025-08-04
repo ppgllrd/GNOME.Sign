@@ -22,13 +22,21 @@ from pyhanko_certvalidator import ValidationContext
 from pyhanko_certvalidator.registry import SimpleCertificateStore
 from pyhanko.pdf_utils.generic import ArrayObject
 
-from i18n import I18NManager
+import locale
+import gettext
 from certificate_manager import CertificateManager, KEYRING_SCHEMA
 from config_manager import ConfigManager
 from ui.stamp_editor_dialog import StampEditorDialog
 from ui.dialogs import create_password_dialog, create_about_dialog, show_error_dialog
 from stamp_creator import HtmlStamp, pango_to_html
 from pyhanko.stamp import StaticStampStyle
+
+APP_ID = "org.pepeg.GnomeSign"
+locale.bindtextdomain(APP_ID, './po')
+gettext.bindtextdomain(APP_ID, './po')
+gettext.textdomain(APP_ID)
+import builtins
+builtins._ = gettext.gettext
 
 def is_running_in_flatpak():
     """Checks if the application is running inside a Flatpak sandbox."""
@@ -90,7 +98,6 @@ class SignatureDetails:
 class GnomeSign(Adw.Application):
     """The main application class, managing state and high-level logic."""
     __gsignals__ = {
-        'language-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'certificates-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'document-changed': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
         'page-changed': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT, GObject.TYPE_INT, GObject.TYPE_INT, GObject.TYPE_BOOLEAN)),
@@ -104,7 +111,6 @@ class GnomeSign(Adw.Application):
         """Initializes the application."""
         super().__init__(application_id="org.pepeg.GnomeSign", flags=Gio.ApplicationFlags.HANDLES_OPEN)
         self.config = ConfigManager()
-        self.i18n = I18NManager()
         self.cert_manager = CertificateManager()
         self.doc, self.current_page, self.active_cert_path = None, 0, None
         self.page, self.display_pixbuf, self.current_file_path = None, None, None
@@ -115,15 +121,10 @@ class GnomeSign(Adw.Application):
         self.window, self.preferences_window = None, None
         self.signatures = []
     
-    def _(self, key):
-        """A shorthand for the translation function."""
-        return self.i18n._(key)
-    
     def do_startup(self):
         """Called when the application is starting up."""
         Adw.Application.do_startup(self)
         self.config.load()
-        self.i18n.set_language(self.config.get_language())
         self.cert_manager.set_cert_paths(self.config.get_cert_paths())
         self._build_actions()
         self.active_cert_path = self.config.get_active_cert_path()
@@ -154,7 +155,7 @@ class GnomeSign(Adw.Application):
     
     def _build_actions(self):
         """Creates and adds application-wide actions."""
-        actions_with_params = [("open_recent", self.on_open_recent_clicked, "s"), ("change_lang", self.on_lang_change_state, 's', self.i18n.get_language())]
+        actions_with_params = [("open_recent", self.on_open_recent_clicked, "s")]
         for name, callback, p_type, *state in actions_with_params:
             action = Gio.SimpleAction.new_stateful(name, GLib.VariantType(p_type), GLib.Variant(p_type, state[0])) if state else Gio.SimpleAction.new(name, GLib.VariantType(p_type))
             if state: action.connect("change-state", callback)
@@ -205,12 +206,12 @@ class GnomeSign(Adw.Application):
             
             self.emit("document-changed", self.doc)
             if self.signatures: self.emit("signatures-found", self.signatures)
-            elif self.active_cert_path and show_toast: self.emit("toast-request", self._("toast_select_area"), None, None)
+            elif self.active_cert_path and show_toast: self.emit("toast-request", _("Drag to select an area and press the sign button"), None, None)
 
             self.reset_signature_state(); self.display_page(0)
             
         except Exception as e:
-            show_error_dialog(self.window, self._("error"), self._("open_pdf_error").format(e))
+            show_error_dialog(self.window, _("Error"), _("Could not open PDF: {}").format(e))
             self.doc = None; self.signatures = []
             self.emit("document-changed", None)
 
@@ -238,20 +239,20 @@ class GnomeSign(Adw.Application):
                     self.window.scroll_to_rect(sig_details.rect)
         
         dialog = Adw.MessageDialog.new(self.window,
-                                       heading=self._("sig_details_title"),
+                                       heading=_("Signature Details"),
                                        body="") 
 
-        validity_parts = [f"<b>{self._('sig_validity_title')}</b>"]
+        validity_parts = [f"<b>{_('Signature Status')}</b>"]
         if sig_details.intact and sig_details.valid:
-            validity_parts.append(f"<span color='green'>{self._('sig_integrity_ok')}</span>")
+            validity_parts.append(f"<span color='green'>{_('The signature is criptographically valid and the document has not been modified.')}</span>")
             if sig_details.trusted:
-                 validity_parts.append(f"<span color='green'>{self._('sig_trust_ok')}</span>")
+                 validity_parts.append(f"<span color='green'>{_('The signer's certificate is trusted.')}</span>")
             elif sig_details.revoked:
-                 validity_parts.append(f"<span color='red'>{self._('sig_revoked')}</span>")
+                 validity_parts.append(f"<span color='red'>{_('The signer's certificate has been revoked.')}</span>")
             else:
-                 validity_parts.append(f"<span color='orange'>{self._('sig_trust_untrusted')}</span>")
+                 validity_parts.append(f"<span color='orange'>{_('Could not establish trust in the signer's certificate.')}</span>")
         else:
-            validity_parts.append(f"<span color='red'>{self._('sig_integrity_error')}</span>")
+            validity_parts.append(f"<span color='red'>{_('The signature is invalid or the document has been modified.')}</span>")
         
         validity_text = "\n".join(validity_parts)
         
@@ -261,22 +262,22 @@ class GnomeSign(Adw.Application):
         
         details_parts = [
             validity_text,
-            f"\n<b>{self._('signer')}:</b> {signer_esc}",
-            f"<b>{self._('sign_date')}:</b> {sig_details.sign_time.strftime('%Y-%m-%d %H:%M:%S %Z') if sig_details.sign_time else 'N/A'}"
+            f"\n<b>{_('Signer')}:</b> {signer_esc}",
+            f"<b>{_('Signature Date')}:</b> {sig_details.sign_time.strftime('%Y-%m-%d %H:%M:%S %Z') if sig_details.sign_time else 'N/A'}"
         ]
         
         if sig_details.reason:
-            details_parts.append(f"<b>{self._('signature_reason_label')}:</b> {GLib.markup_escape_text(sig_details.reason)}")
+            details_parts.append(f"<b>{_('Reason')}:</b> {GLib.markup_escape_text(sig_details.reason)}")
 
         if sig_details.location:
-            details_parts.append(f"<b>{self._('signature_location_label')}:</b> {GLib.markup_escape_text(sig_details.location)}")
+            details_parts.append(f"<b>{_('Location')}:</b> {GLib.markup_escape_text(sig_details.location)}")
             
         if sig_details.contact_info:
-            details_parts.append(f"<b>{self._('signature_contact_label')}:</b> {GLib.markup_escape_text(sig_details.contact_info)}")
+            details_parts.append(f"<b>{_('Contact')}:</b> {GLib.markup_escape_text(sig_details.contact_info)}")
 
         details_parts.extend([
-            f"\n<b>{self._('issuer')}:</b> {issuer_esc}",
-            f"<b>{self._('serial')}:</b> {serial_esc}"
+            f"\n<b>{_('Issuer')}:</b> {issuer_esc}",
+            f"<b>{_('Serial')}:</b> {serial_esc}"
         ])
         
         details_text = "\n".join(details_parts)
@@ -292,7 +293,7 @@ class GnomeSign(Adw.Application):
         
         dialog.set_extra_child(body_label)
         
-        dialog.add_response("ok", self._("accept"))
+        dialog.add_response("ok", _("Accept"))
         dialog.set_default_response("ok")
         dialog.set_close_response("ok")
         
@@ -303,8 +304,8 @@ class GnomeSign(Adw.Application):
         def on_response(dialog, response):
             if response == Gtk.ResponseType.ACCEPT:
                 if file := dialog.get_file(): self.open_file_path(file.get_path())
-        file_chooser = Gtk.FileChooserNative.new(self._("open_pdf_dialog_title"), self.window, Gtk.FileChooserAction.OPEN, self._("open"), self._("cancel"))
-        filter_pdf = Gtk.FileFilter(); filter_pdf.set_name(self._("pdf_files")); filter_pdf.add_mime_type("application/pdf")
+        file_chooser = Gtk.FileChooserNative.new(_("Open PDF Document"), self.window, Gtk.FileChooserAction.OPEN, _("Open"), _("Cancel"))
+        filter_pdf = Gtk.FileFilter(); filter_pdf.set_name(_("PDF Files")); filter_pdf.add_mime_type("application/pdf")
         file_chooser.add_filter(filter_pdf)
         if os.path.isdir(last_folder := self.config.get_last_folder()):
             file_chooser.set_current_folder(Gio.File.new_for_path(last_folder))
@@ -316,7 +317,7 @@ class GnomeSign(Adw.Application):
         if os.path.exists(file_path): self.open_file_path(file_path)
         else:
             self.emit("toast-request", f"File not found: {file_path}", None, None)
-            self.config.remove_recent_file(file_path); self.emit("language-changed")
+            self.config.remove_recent_file(file_path)
 
     def on_preferences_clicked(self, action, param):
         """Shows the preferences window."""
@@ -336,27 +337,20 @@ class GnomeSign(Adw.Application):
         dialog.connect("destroy", lambda w: self.config.save())
         dialog.present()
     
-    def on_lang_change_state(self, action, value):
-        """Handles changing the application language."""
-        new_lang = value.get_string()
-        if action.get_state().get_string() != new_lang:
-            action.set_state(value); self.i18n.set_language(new_lang)
-            self.config.set_language(new_lang); self.emit('language-changed')
-
     def on_sign_document_clicked(self, action=None, param=None):
         """Handles the main 'Sign Document' action."""
         if not self.active_cert_path:
-            self.emit("toast-request", self._("no_cert_selected_error"), None, None); return
+            self.emit("toast-request", _("Please select a certificate in Preferences before signing."), None, None); return
         if not all([self.doc, self.signature_rect, self.current_file_path]):
-            self.emit("toast-request", self._("need_pdf_and_area"), None, None); return
+            self.emit("toast-request", _("You need to open a PDF and select a signature area."), None, None); return
         password = Secret.password_lookup_sync(KEYRING_SCHEMA, {"path": self.active_cert_path}, None)
         if not password:
-            show_error_dialog(self.window, self._("error"), self._("credential_load_error"))
+            show_error_dialog(self.window, _("Error"), _("Could not load certificate credentials."))
             return
         
         private_key_pyca, certificate_pyca = self.cert_manager.get_credentials(self.active_cert_path, password)
         if not (private_key_pyca and certificate_pyca):
-            show_error_dialog(self.window, self._("error"), self._("credential_load_error"))
+            show_error_dialog(self.window, _("Error"), _("Could not load certificate credentials."))
             return
 
         self._perform_signing(private_key_pyca, certificate_pyca)
@@ -384,7 +378,7 @@ class GnomeSign(Adw.Application):
         except Exception as e:
             import traceback
             traceback.print_exc()
-            show_error_dialog(self.window, self._("sig_error_title"), self._("sig_error_message").format(e))
+            show_error_dialog(self.window, _("Signature Error"), _("Error: {}").format(e))
             return
 
         if is_running_in_flatpak():
@@ -395,11 +389,11 @@ class GnomeSign(Adw.Application):
                 with open(output_path, "wb") as out_f:
                     out_f.write(signed_bytes)
                 
-                self.emit("toast-request", self._("sign_success_message").format(os.path.basename(output_path)), self._("open"), lambda: self.open_file_path(output_path, show_toast=False))
+                self.emit("toast-request", _("Saved as: {}").format(os.path.basename(output_path)), _("Open"), lambda: self.open_file_path(output_path, show_toast=False))
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                show_error_dialog(self.window, self._("sig_error_title"), self._("sig_error_message").format(e))
+                show_error_dialog(self.window, _("Signature Error"), _("Error: {}").format(e))
 
     def _get_signed_pdf_bytes_in_memory(self, private_key_pyca, certificate_pyca):
         """Encapsulates the pyHanko signing logic, returning the result as bytes."""
@@ -439,7 +433,7 @@ class GnomeSign(Adw.Application):
         suggested_name = os.path.basename(suggested_path)
 
         dialog = Gtk.FileChooserNative.new(
-            self._("save_pdf_dialog_title"),
+            _("Save Signed PDF"),
             self.window,
             Gtk.FileChooserAction.SAVE
         )
@@ -465,14 +459,14 @@ class GnomeSign(Adw.Application):
                         Gio.FileCreateFlags.REPLACE_DESTINATION, None
                     )
                     output_path = output_gfile.get_path()
-                    self.emit("toast-request", self._("sign_success_message").format(os.path.basename(output_path)), self._("open"), lambda: self.open_file_path(output_path, show_toast=False))
+                    self.emit("toast-request", _("Saved as: {}").format(os.path.basename(output_path)), _("Open"), lambda: self.open_file_path(output_path, show_toast=False))
                 except GLib.Error as e:
-                    show_error_dialog(self.window, self._("sig_error_title"), self._("sig_error_message").format(e))
+                    show_error_dialog(self.window, _("Signature Error"), _("Error: {}").format(e))
         dialog.destroy()
 
     def on_about_clicked(self, action, param):
         """Shows the 'About' dialog."""
-        create_about_dialog(self.window, self._)
+        create_about_dialog(self.window, _)
         
     def _update_sign_action_state(self):
         """Centralized method to update the enabled state of the sign action."""
@@ -517,10 +511,10 @@ class GnomeSign(Adw.Application):
     def on_jump_to_page_clicked(self, button):
         """Shows a dialog to jump to a specific page."""
         if not self.doc: return
-        dialog = Gtk.Dialog(title=self._("jump_to_page_title"), transient_for=self.window, modal=True)
-        dialog.add_buttons(self._("cancel"), Gtk.ResponseType.CANCEL, self._("accept"), Gtk.ResponseType.OK)
+        dialog = Gtk.Dialog(title=_("Go to page"), transient_for=self.window, modal=True)
+        dialog.add_buttons(_("Cancel"), Gtk.ResponseType.CANCEL, _("Accept"), Gtk.ResponseType.OK)
         content_area = dialog.get_content_area(); content_area.set_spacing(10); content_area.set_margin_top(10); content_area.set_margin_bottom(10); content_area.set_margin_start(10); content_area.set_margin_end(10)
-        content_area.append(Gtk.Label(label=self._("jump_to_page_prompt").format(len(self.doc))))
+        content_area.append(Gtk.Label(label=_("Go to page (1 - {})").format(len(self.doc))))
         adj = Gtk.Adjustment(value=self.current_page + 1, lower=1, upper=len(self.doc), step_increment=1)
         spin = Gtk.SpinButton(adjustment=adj, numeric=True); content_area.append(spin)
         dialog.set_default_widget(spin); spin.connect("activate", lambda w: dialog.response(Gtk.ResponseType.OK))
@@ -608,7 +602,7 @@ class GnomeSign(Adw.Application):
             self.config.save()
             return True
         else:
-            show_error_dialog(self.window, self._("error"), self._("bad_password_or_file"))
+            show_error_dialog(self.window, _("Error"), _("Incorrect password or corrupted file."))
             return False
 
     def remove_certificate(self, path):
@@ -637,11 +631,11 @@ class GnomeSign(Adw.Application):
                         if password is not None:
                             self.add_certificate(pkcs12_path, password)
                     
-                    create_password_dialog(self.preferences_window, self._("password"), os.path.basename(pkcs12_path), self._, on_password_response)
+                    create_password_dialog(self.preferences_window, _("Password"), os.path.basename(pkcs12_path), _, on_password_response)
 
-        file_chooser = Gtk.FileChooserNative.new(self._("open_cert_dialog_title"), self.preferences_window, Gtk.FileChooserAction.OPEN, self._("open"), self._("cancel"))
+        file_chooser = Gtk.FileChooserNative.new(_("Select Certificate File (.p12/.pfx)"), self.preferences_window, Gtk.FileChooserAction.OPEN, _("Open"), _("Cancel"))
         filter_p12 = Gtk.FileFilter()
-        filter_p12.set_name(self._("p12_files"))
+        filter_p12.set_name(_("PKCS#12 Files"))
         filter_p12.add_pattern("*.p12"); filter_p12.add_pattern("*.pfx")
         file_chooser.add_filter(filter_p12)
         file_chooser.connect("response", on_file_chooser_response)

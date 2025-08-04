@@ -70,17 +70,17 @@ class PreferencesWindow(Adw.PreferencesWindow):
 
     def _update_texts(self):
         """Updates all translatable text elements in the window."""
-        self.set_title(self.i18n._("preferences"))
-        self.page_general.set_title(self.i18n._("general"))
+        self.set_title(_("Preferences"))
+        self.page_general.set_title(_("General"))
         self.page_general.set_icon_name("preferences-system-symbolic")
-        self.lang_group.set_title(self.i18n._("language"))
-        self.lang_row.set_title(self.i18n._("language"))
-        self.signing_group.set_title(self.i18n._("signature_settings"))
-        self.reason_row.set_title(self.i18n._("signature_reason"))
-        self.reason_row.set_tooltip_text(self.i18n._("reason_placeholder"))
-        self.location_row.set_title(self.i18n._("signature_location"))
-        self.location_row.set_tooltip_text(self.i18n._("location_placeholder"))
-        self.certs_page.set_title(self.i18n._("certificates"))
+        self.lang_group.set_title(_("Language"))
+        self.lang_row.set_title(_("Language"))
+        self.signing_group.set_title(_("Signature Settings"))
+        self.reason_row.set_title(_("Default signing reason"))
+        self.reason_row.set_tooltip_text(_("e.g., I agree to the terms"))
+        self.location_row.set_title(_("Default signing location"))
+        self.location_row.set_tooltip_text(_("e.g., Madrid, Spain"))
+        self.certs_page.set_title(_("Certificates"))
         self.certs_page.set_icon_name("dialog-password-symbolic")
         self.update_ui()
 
@@ -123,24 +123,24 @@ class PreferencesWindow(Adw.PreferencesWindow):
             row.set_activatable(False)
             
             now = datetime.now(timezone.utc); expires = cert['expires']
-            if expires < now: expiry_text = f"({self.app._('expired')})"; row.add_css_class("error")
-            elif expires < (now + timedelta(days=30)): expiry_text = f"({self.app._('expires_soon')})"; row.add_css_class("warning")
+            if expires < now: expiry_text = f"({_('Expired')})"; row.add_css_class("error")
+            elif expires < (now + timedelta(days=30)): expiry_text = f"({_('Expires soon')})"; row.add_css_class("warning")
             else: expiry_text = ""
-            row.set_subtitle(f"{self.app._('expires')}: {expires.strftime('%Y-%m-%d')} {expiry_text}")
+            row.set_subtitle(f"{_('Expires')}: {expires.strftime('%Y-%m-%d')} {expiry_text}")
             
             details_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=6, margin_bottom=6)
-            details_box.append(Gtk.Label(label=f"<b>{self.app._('issuer')}:</b> {cert['issuer_cn']}", use_markup=True, xalign=0, wrap=True))
-            details_box.append(Gtk.Label(label=f"<b>{self.app._('serial')}:</b> {cert['serial']}", use_markup=True, xalign=0, wrap=True))
-            details_box.append(Gtk.Label(label=f"<b>{self.app._('path')}:</b> <small>{cert['path']}</small>", use_markup=True, xalign=0, wrap=True))
+            details_box.append(Gtk.Label(label=f"<b>{_('Issuer')}:</b> {cert['issuer_cn']}", use_markup=True, xalign=0, wrap=True))
+            details_box.append(Gtk.Label(label=f"<b>{_('Serial')}:</b> {cert['serial']}", use_markup=True, xalign=0, wrap=True))
+            details_box.append(Gtk.Label(label=f"<b>{_('Path')}:</b> <small>{cert['path']}</small>", use_markup=True, xalign=0, wrap=True))
             row.add_row(details_box)
 
-            delete_button = Gtk.Button.new_with_label(self.app._("delete")); delete_button.set_valign(Gtk.Align.CENTER)
+            delete_button = Gtk.Button.new_with_label(_("Delete")); delete_button.set_valign(Gtk.Align.CENTER)
             delete_button.get_style_context().add_class("destructive-action")
             delete_button.connect("clicked", self._on_delete_cert_clicked, cert['path'])
             delete_row = Adw.ActionRow.new(); delete_row.add_prefix(delete_button); row.add_row(delete_row)
             self.certs_group.add(row)
 
-        add_button = Gtk.Button.new_with_label(self.app._("add_certificate"))
+        add_button = Gtk.Button.new_with_label(_("Add Certificate..."))
         add_button.get_style_context().add_class("suggested-action")
         add_button.connect("clicked", self._on_add_cert_clicked)
         add_row = Adw.ActionRow.new(); add_row.set_halign(Gtk.Align.CENTER); add_row.add_prefix(add_button)
@@ -162,8 +162,8 @@ class PreferencesWindow(Adw.PreferencesWindow):
             modal=True, 
             message_type=Gtk.MessageType.QUESTION, 
             buttons=Gtk.ButtonsType.YES_NO, 
-            text=self.app._("confirm_delete_cert_title"), 
-            secondary_text=self.app._("confirm_delete_cert_message")
+            text=_("Confirm Deletion"),
+            secondary_text=_("Are you sure you want to permanently delete this certificate and its saved password?")
         )
         def on_confirm(d, res):
             if res == Gtk.ResponseType.YES:

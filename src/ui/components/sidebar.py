@@ -60,8 +60,8 @@ class Sidebar(Gtk.Box):
     def _on_realize(self, widget):
         """Called when the widget is first realized (i.e., added to a toplevel window)."""
         app = self.get_ancestor(Adw.ApplicationWindow).get_application()
-        self.pages_button.set_tooltip_text(app._("page_thumbnails"))
-        self.signatures_button.set_tooltip_text(app._("show_signatures_tooltip"))
+        self.pages_button.set_tooltip_text(_("Page Thumbnails"))
+        self.signatures_button.set_tooltip_text(_("Show existing signatures in the document"))
     
     def _on_view_switched(self, button, view_name):
         """Callback to switch the visible child of the Gtk.Stack."""

@@ -34,7 +34,7 @@ class AppWindow(Adw.ApplicationWindow):
         self.set_content(self.toast_overlay)
 
         self.sidebar_button = Gtk.ToggleButton(icon_name="view-list-symbolic"); self.header_bar.pack_start(self.sidebar_button)
-        self.title_widget = Adw.WindowTitle(title=app._("window_title")); self.header_bar.set_title_widget(self.title_widget)
+        self.title_widget = Adw.WindowTitle(title=_("GnomeSign")); self.header_bar.set_title_widget(self.title_widget)
         self.open_button = Gtk.Button(icon_name="document-open-symbolic"); self.header_bar.pack_start(self.open_button)
         self.nav_box = Gtk.Box(spacing=6); self.nav_box.get_style_context().add_class("linked")
         self.prev_page_button = Gtk.Button(icon_name="go-previous-symbolic")
@@ -142,9 +142,9 @@ class AppWindow(Adw.ApplicationWindow):
         """Handles the 'signature-state-changed' signal, updating the sign button."""
         can_sign = app.doc is not None and app.signature_rect and app.active_cert_path
         self.sign_button.set_sensitive(can_sign)
-        if can_sign: self.sign_button.set_tooltip_text(app._("sign_button_tooltip_sign"))
-        elif not app.active_cert_path: self.sign_button.set_tooltip_text(app._("no_cert_selected_error"))
-        else: self.sign_button.set_tooltip_text(app._("sign_button_tooltip_select_area"))
+        if can_sign: self.sign_button.set_tooltip_text(_("Sign the document"))
+        elif not app.active_cert_path: self.sign_button.set_tooltip_text(_("Please select a certificate in Preferences before signing."))
+        else: self.sign_button.set_tooltip_text(_("Drag on the document to select the signature area"))
         self.drawing_area.queue_draw()
     
     def _on_signatures_found(self, app, signatures):
@@ -160,12 +160,12 @@ class AppWindow(Adw.ApplicationWindow):
     def _on_language_changed(self, app):
         """Handles the 'language-changed' signal, updating all translatable texts."""
         self._build_and_set_menu(app)
-        self.sidebar_button.set_tooltip_text(app._("toggle_sidebar_tooltip"))
-        self.open_button.set_tooltip_text(app._("open_pdf"))
-        self.prev_page_button.set_tooltip_text(app._("prev_page"))
-        self.next_page_button.set_tooltip_text(app._("next_page"))
-        self.page_entry_button.set_tooltip_text(app._("jump_to_page_title"))
-        self.show_sigs_button.set_tooltip_text(app._("show_signatures_tooltip"))
+        self.sidebar_button.set_tooltip_text(_("Show/Hide sidebar"))
+        self.open_button.set_tooltip_text(_("Open PDF..."))
+        self.prev_page_button.set_tooltip_text(_("Previous page"))
+        self.next_page_button.set_tooltip_text(_("Next page"))
+        self.page_entry_button.set_tooltip_text(_("Go to page"))
+        self.show_sigs_button.set_tooltip_text(_("Show existing signatures in the document"))
         self._update_certs_button_tooltip()
         self._on_signature_state_changed(app)
     
@@ -179,7 +179,7 @@ class AppWindow(Adw.ApplicationWindow):
     def _update_certs_button_tooltip(self):
         """Updates the tooltip of the certificates button with the active certificate's name."""
         app = self.get_application()
-        tooltip = app._("manage_certificates_tooltip")
+        tooltip = _("Manage certificates")
         if app.active_cert_path:
             if cert_details := next((c for c in app.cert_manager.get_all_certificate_details() if c['path'] == app.active_cert_path), None):
                 tooltip = cert_details['subject_cn']
@@ -206,7 +206,7 @@ class AppWindow(Adw.ApplicationWindow):
     def show_signature_info(self, count):
         """Shows the banner for existing signatures."""
         app = self.get_application()
-        self.signature_banner.set_title(app._("signatures_found_toast").format(count)); self.signature_banner.set_button_label(app._("go_to_signatures")); self.signature_banner.set_revealed(True)
+        self.signature_banner.set_title(_("Found {} signatures in the document.").format(count)); self.signature_banner.set_button_label(_("View Signatures")); self.signature_banner.set_revealed(True)
 
     def hide_signature_info(self):
         """Hides the banner for existing signatures."""
@@ -241,14 +241,14 @@ class AppWindow(Adw.ApplicationWindow):
 
     def _build_and_set_menu(self, app):
         """Creates and sets the main application menu, including recent files."""
-        menu = Gio.Menu.new(); menu.append(app._("open_pdf"), "app.open")
+        menu = Gio.Menu.new(); menu.append(_("Open PDF..."), "app.open")
         if recent_files := app.config.get_recent_files():
             recent_menu = Gio.Menu.new()
             for file_path in recent_files: recent_menu.append(os.path.basename(file_path), f"app.open_recent({GLib.shell_quote(file_path)})")
-            menu.append_submenu(app._("open_recent"), recent_menu)
-        menu.append_section(None, Gio.Menu.new()); menu.append(app._("sign_document"), "app.sign"); menu.append_section(None, Gio.Menu.new())
-        menu.append(app._("edit_stamp_templates"), "app.edit_stamps"); menu.append(app._("preferences"), "app.preferences"); menu.append_section(None, Gio.Menu.new())
-        menu.append(app._("about"), "app.about")
+            menu.append_submenu(_("Open Recent"), recent_menu)
+        menu.append_section(None, Gio.Menu.new()); menu.append(_("Sign Document"), "app.sign"); menu.append_section(None, Gio.Menu.new())
+        menu.append(_("Edit Signature Templates"), "app.edit_stamps"); menu.append(_("Preferences"), "app.preferences"); menu.append_section(None, Gio.Menu.new())
+        menu.append(_("About"), "app.about")
         self.menu_button.set_menu_model(menu)
         
     def _on_drawing_area_resize(self, area, width, height):
@@ -392,9 +392,9 @@ class AppWindow(Adw.ApplicationWindow):
 
     def _update_popover_content(self, sig_details):
         """Prepares the signature details text for the popover."""
-        app = self.get_application(); validity_text = f"<b><span color='green'>{app._('sig_integrity_ok')}</span></b>" if sig_details.valid and sig_details.intact else f"<b><span color='red'>{app._('sig_integrity_error')}</span></b>"
+        app = self.get_application(); validity_text = f"<b><span color='green'>{_('The signature is criptographically valid and the document has not been modified.')}</span></b>" if sig_details.valid and sig_details.intact else f"<b><span color='red'>{_('The signature is invalid or the document has been modified.')}</span></b>"
         signer_esc = GLib.markup_escape_text(sig_details.signer_name); date_str = sig_details.sign_time.strftime('%Y-%m-%d %H:%M:%S %Z') if sig_details.sign_time else 'N/A'
-        self.popover_content_label.set_markup(f"{validity_text}\n<b>{app._('signer')}:</b> {signer_esc}\n<b>{app._('sign_date')}:</b> {date_str}")
+        self.popover_content_label.set_markup(f"{validity_text}\n<b>{_('Signer')}:</b> {signer_esc}\n<b>{_('Signature Date')}:</b> {date_str}")
 
     def _on_drawing_area_leave(self, controller):
         """Hides the popover when the mouse leaves the drawing area."""

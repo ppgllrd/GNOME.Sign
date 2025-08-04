@@ -23,10 +23,10 @@ class StampEditorDialog(Gtk.Dialog):
         self.loaded_cert = None
         self.block_combo_changed = False
 
-        self.set_title(self.i18n._("edit_stamp_templates"))
+        self.set_title(_("Edit Signature Templates"))
         self.set_default_size(700, 600)
 
-        self.add_button(self.i18n._("close_button"), Gtk.ResponseType.CLOSE)
+        self.add_button(_("Close"), Gtk.ResponseType.CLOSE)
 
         main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12, margin_top=12, margin_bottom=12, margin_start=12, margin_end=12)
         self.get_content_area().append(main_box)
@@ -36,18 +36,18 @@ class StampEditorDialog(Gtk.Dialog):
         self.right_pane = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, hexpand=True)
         main_box.append(self.right_pane)
 
-        left_pane.append(Gtk.Label(label=f"<b>{self.i18n._('templates')}</b>", use_markup=True, xalign=0))
+        left_pane.append(Gtk.Label(label=f"<b>{_('Templates')}</b>", use_markup=True, xalign=0))
         self.template_combo = Gtk.ComboBoxText()
         left_pane.append(self.template_combo)
         
         btn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=12)
         left_pane.append(btn_box)
         
-        self.new_btn = Gtk.Button.new_with_label(self.i18n._("new"))
-        self.duplicate_btn = Gtk.Button.new_with_label(self.i18n._("duplicate"))
-        self.save_btn = Gtk.Button.new_with_label(self.i18n._("save"))
-        self.delete_btn = Gtk.Button.new_with_label(self.i18n._("delete"))
-        self.set_active_btn = Gtk.Button.new_with_label(self.i18n._("set_as_active"))
+        self.new_btn = Gtk.Button.new_with_label(_("New"))
+        self.duplicate_btn = Gtk.Button.new_with_label(_("Duplicate"))
+        self.save_btn = Gtk.Button.new_with_label(_("Save"))
+        self.delete_btn = Gtk.Button.new_with_label(_("Delete"))
+        self.set_active_btn = Gtk.Button.new_with_label(_("Use for signing"))
         btn_box.append(self.new_btn); btn_box.append(self.duplicate_btn); btn_box.append(self.save_btn)
         btn_box.append(self.delete_btn); btn_box.append(self.set_active_btn)
 
@@ -59,14 +59,14 @@ class StampEditorDialog(Gtk.Dialog):
 
     def _build_right_pane(self):
         """Builds the right-hand side of the editor UI."""
-        self.right_pane.append(Gtk.Label(label=f"<b>{self.i18n._('template_name')}</b>", use_markup=True, xalign=0))
+        self.right_pane.append(Gtk.Label(label=f"<b>{_('Template Name')}</b>", use_markup=True, xalign=0))
         self.name_entry = Gtk.Entry()
         self.right_pane.append(self.name_entry)
 
         toolbar = self._build_toolbar()
         self.right_pane.append(toolbar)
 
-        self.right_pane.append(Gtk.Label(label=f"<b>{self.i18n._('template_content')}</b>", use_markup=True, xalign=0))
+        self.right_pane.append(Gtk.Label(label=f"<b>{_('Template Content')}</b>", use_markup=True, xalign=0))
         self.text_view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR)
         scrolled_text = Gtk.ScrolledWindow(vexpand=True, hexpand=True, hscrollbar_policy="never", min_content_height=120)
         scrolled_text.set_child(self.text_view)
@@ -74,7 +74,7 @@ class StampEditorDialog(Gtk.Dialog):
 
         preview_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, vexpand=True)
         self.right_pane.append(preview_container)
-        preview_container.append(Gtk.Label(label=f"<b>{self.i18n._('preview')}</b>", use_markup=True, xalign=0))
+        preview_container.append(Gtk.Label(label=f"<b>{_('Preview')}</b>", use_markup=True, xalign=0))
         self.preview_area = Gtk.DrawingArea(vexpand=True, hexpand=True)
         self.preview_area.get_style_context().add_class("view")
         preview_container.append(self.preview_area)
@@ -87,24 +87,24 @@ class StampEditorDialog(Gtk.Dialog):
         italic_btn = Gtk.Button.new_from_icon_name("format-text-italic-symbolic"); italic_btn.connect("clicked", lambda b: self._toggle_pango_tag("i"))
         underlined_btn = Gtk.Button.new_from_icon_name("format-text-underline-symbolic"); underlined_btn.connect("clicked", lambda b: self._toggle_pango_tag("u"))
 
-        bold_btn.set_tooltip_text(self.i18n._("stamp_editor_bold_tooltip"))
-        italic_btn.set_tooltip_text(self.i18n._("stamp_editor_italic_tooltip"))
-        underlined_btn.set_tooltip_text(self.i18n._("stamp_editor_underline_tooltip"))
+        bold_btn.set_tooltip_text(_("Bold"))
+        italic_btn.set_tooltip_text(_("Italic"))
+        underlined_btn.set_tooltip_text(_("Underline"))
 
-        font_combo = Gtk.ComboBoxText.new(); font_combo.append("placeholder_id", self.i18n._("font"))
+        font_combo = Gtk.ComboBoxText.new(); font_combo.append("placeholder_id", _("Font"))
         for font in ["Times-Roman", "Helvetica", "Courier"]: font_combo.append_text(font)
         font_combo.set_active_id("placeholder_id"); font_combo.connect("changed", self._on_font_changed)
-        font_combo.set_tooltip_text(self.i18n._("stamp_editor_font_tooltip"))
+        font_combo.set_tooltip_text(_("Font"))
 
         size_combo = Gtk.ComboBoxText.new()
-        self.pango_size_map = {self.i18n._("size_small"): "small", self.i18n._("size_normal"): "medium", self.i18n._("size_large"): "large", self.i18n._("size_huge"): "x-large"}
-        size_combo.append("placeholder_id", self.i18n._("size"))
+        self.pango_size_map = {_("Small"): "small", _("Normal"): "medium", _("Large"): "large", _("Huge"): "x-large"}
+        size_combo.append("placeholder_id", _("Size"))
         for label in self.pango_size_map: size_combo.append_text(label)
         size_combo.set_active_id("placeholder_id"); size_combo.connect("changed", self._on_size_changed)
-        size_combo.set_tooltip_text(self.i18n._("stamp_editor_size_tooltip"))
+        size_combo.set_tooltip_text(_("Font Size"))
 
         color_btn = Gtk.ColorButton.new(); color_btn.connect("color-set", lambda b: self._apply_span_tag("color", self._rgba_to_hex(b.get_rgba())))
-        color_btn.set_tooltip_text(self.i18n._("stamp_editor_color_tooltip"))
+        color_btn.set_tooltip_text(_("Text Color"))
         
         toolbar.append(bold_btn); toolbar.append(italic_btn); toolbar.append(underlined_btn); toolbar.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
         toolbar.append(font_combo); toolbar.append(size_combo); toolbar.append(color_btn)
@@ -239,7 +239,7 @@ class StampEditorDialog(Gtk.Dialog):
         
         if self._is_form_dirty():
             target_id = combo.get_active_id()
-            confirm_dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.YES_NO, text=self.i18n._("unsaved_changes_title"), secondary_text=self.i18n._("unsaved_changes_message"))
+            confirm_dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.YES_NO, text=_("Unsaved Changes"), secondary_text=_("You have unsaved changes. Do you want to proceed and discard them?"))
             def on_confirm_response(conf_d, res):
                 if res == Gtk.ResponseType.YES:
                     self._load_template_data(target_id)
@@ -258,7 +258,7 @@ class StampEditorDialog(Gtk.Dialog):
         """Handles the 'New' button click, preparing the form for a new template."""
         self.current_id = uuid.uuid4().hex
         self._clear_fields()
-        self.name_entry.set_text(f"{self.i18n._('new')} {self.i18n._('template')}")
+        self.name_entry.set_text(f"{_('New')} {_('Template')}")
         self.initial_form_data = self._get_current_form_state()
         self.name_entry.grab_focus()
 
@@ -266,7 +266,7 @@ class StampEditorDialog(Gtk.Dialog):
         """Handles the 'Duplicate' button click, creating a copy of the current template."""
         if not self.current_id: return
         self.current_id = uuid.uuid4().hex
-        self.name_entry.set_text(f"{self.name_entry.get_text()} ({self.i18n._('copy')})")
+        self.name_entry.set_text(f"{self.name_entry.get_text()} ({_('copy')})")
         self.initial_form_data = self._get_current_form_state()
         self.save_btn.set_sensitive(True)
 
@@ -302,7 +302,7 @@ class StampEditorDialog(Gtk.Dialog):
     def _on_close_request(self, dialog):
         """Handles the dialog close request, checking for unsaved changes before closing."""
         if self._is_form_dirty():
-            confirm_dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.YES_NO, text=self.i18n._("unsaved_changes_title"), secondary_text=self.i18n._("confirm_close_message"))
+            confirm_dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.YES_NO, text=_("Unsaved Changes"), secondary_text=_("Close without saving changes?"))
             def on_confirm_response(conf_d, res):
                 if res == Gtk.ResponseType.YES: self.destroy()
                 conf_d.destroy()

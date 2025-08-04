@@ -7,21 +7,21 @@ gi.require_version("PangoCairo", "1.0")
 from gi.repository import Gtk, Pango, PangoCairo, Gdk, Secret, GLib, Gio
 import os
 
-def create_about_dialog(parent, i18n_func):
+def create_about_dialog(parent, _):
     """Creates and shows the About dialog."""
     dialog = Gtk.AboutDialog(transient_for=parent, modal=True)
     dialog.set_program_name("GnomeSign")
     dialog.set_version("1.0")
-    dialog.set_comments(i18n_func("sign_reason"))
+    dialog.set_comments(_("Sign PDF documents with digital certificates"))
     dialog.set_logo_icon_name("org.pepeg.GnomeSign") 
     dialog.set_website("https://github.com/ppgllrd/GNOME.Sign")
     dialog.set_authors(["Pepe Gallardo", "Gemini"])
     dialog.present()
 
-def create_password_dialog(parent, title, message, i18n_func, callback):
+def create_password_dialog(parent, title, message, _, callback):
     """Creates a generic dialog to request a password for a given action."""
     dialog = Gtk.Dialog(title=title, transient_for=parent, modal=True)
-    dialog.add_buttons(i18n_func("cancel"), Gtk.ResponseType.CANCEL, i18n_func("accept"), Gtk.ResponseType.OK)
+    dialog.add_buttons(_("Cancel"), Gtk.ResponseType.CANCEL, _("Accept"), Gtk.ResponseType.OK)
     ok_button = dialog.get_widget_for_response(Gtk.ResponseType.OK)
     ok_button.get_style_context().add_class("suggested-action")
     dialog.set_default_widget(ok_button)
@@ -32,7 +32,7 @@ def create_password_dialog(parent, title, message, i18n_func, callback):
     content_area.set_margin_start(10); content_area.set_margin_end(10)
     
     content_area.append(Gtk.Label(label=f"<b>{message}</b>", use_markup=True))
-    password_entry = Gtk.Entry(visibility=False, placeholder_text=i18n_func("password"))
+    password_entry = Gtk.Entry(visibility=False, placeholder_text=_("Password"))
     content_area.append(password_entry)
     password_entry.connect("activate", lambda w: dialog.response(Gtk.ResponseType.OK))
 

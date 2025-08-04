@@ -1,0 +1,7 @@
+src/main.py
+src/ui/app_window.py
+src/ui/components/sidebar.py
+src/ui/components/welcome.py
+src/ui/dialogs.py
+src/ui/preferences_window.py
+src/ui/stamp_editor_dialog.py

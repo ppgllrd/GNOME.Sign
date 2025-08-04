@@ -1,0 +1,318 @@
+# Spanish translations for PACKAGE package.
+# Copyright (C) 2025 THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# Automatically generated, 2025.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-08-04 09:02+0000\n"
+"PO-Revision-Date: 2025-08-04 09:02+0000\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: src/main.py:208
+msgid "toast_select_area"
+msgstr "Arrastre para seleccionar un área y pulse el botón de firma"
+
+#: src/main.py:213 src/main.py:354 src/main.py:359 src/main.py:611
+msgid "error"
+msgstr "Error"
+
+#: src/main.py:213
+msgid "open_pdf_error"
+msgstr "No se pudo abrir el PDF: {}"
+
+#: src/main.py:241
+msgid "sig_details_title"
+msgstr "Detalles de la Firma"
+
+#: src/main.py:295 src/main.py:521
+msgid "accept"
+msgstr "Aceptar"
+
+#: src/main.py:306
+msgid "open_pdf_dialog_title"
+msgstr "Abrir Documento PDF"
+
+#: src/main.py:306 src/main.py:398 src/main.py:468 src/main.py:642
+msgid "open"
+msgstr "Abrir"
+
+#: src/main.py:306 src/main.py:521 src/main.py:642
+msgid "cancel"
+msgstr "Cancelar"
+
+#: src/main.py:307
+msgid "pdf_files"
+msgstr "Archivos PDF"
+
+#: src/main.py:349 src/ui/app_window.py:146
+msgid "no_cert_selected_error"
+msgstr "Seleccione un certificado en Preferencias antes de firmar."
+
+#: src/main.py:351
+msgid "need_pdf_and_area"
+msgstr "Necesitas abrir un PDF y seleccionar un área de firma."
+
+#: src/main.py:354 src/main.py:359
+msgid "credential_load_error"
+msgstr "No se pudieron cargar las credenciales del certificado."
+
+#: src/main.py:387 src/main.py:402 src/main.py:470
+msgid "sig_error_title"
+msgstr "Error de Firma"
+
+#: src/main.py:387 src/main.py:402 src/main.py:470
+msgid "sig_error_message"
+msgstr "Error: {}"
+
+#: src/main.py:398 src/main.py:468
+msgid "sign_success_message"
+msgstr "Guardado como: {}"
+
+#: src/main.py:442
+msgid "save_pdf_dialog_title"
+msgstr "Guardar PDF Firmado"
+
+#: src/main.py:520 src/ui/app_window.py:167
+msgid "jump_to_page_title"
+msgstr "Ir a la página"
+
+#: src/main.py:523
+msgid "jump_to_page_prompt"
+msgstr "Ir a la página (1 - {})"
+
+#: src/main.py:611
+msgid "bad_password_or_file"
+msgstr "Contraseña incorrecta o archivo dañado."
+
+#: src/main.py:640
+msgid "password"
+msgstr "Contraseña"
+
+#: src/main.py:642
+msgid "open_cert_dialog_title"
+msgstr "Seleccionar Archivo de Certificado (.p12/.pfx)"
+
+#: src/main.py:644
+msgid "p12_files"
+msgstr "Archivos PKCS#12"
+
+#: src/ui/app_window.py:37
+msgid "window_title"
+msgstr "GnomeSign"
+
+#: src/ui/app_window.py:145
+msgid "sign_button_tooltip_sign"
+msgstr "Firmar el documento"
+
+#: src/ui/app_window.py:147
+msgid "sign_button_tooltip_select_area"
+msgstr "Arrastre sobre el documento para seleccionar el área de la firma"
+
+#: src/ui/app_window.py:163
+msgid "toggle_sidebar_tooltip"
+msgstr "Mostrar/Ocular panel lateral"
+
+#: src/ui/app_window.py:164 src/ui/app_window.py:244
+msgid "open_pdf"
+msgstr "Abrir PDF..."
+
+#: src/ui/app_window.py:165
+msgid "prev_page"
+msgstr "Página anterior"
+
+#: src/ui/app_window.py:166
+msgid "next_page"
+msgstr "Página siguiente"
+
+#: src/ui/app_window.py:168 src/ui/components/sidebar.py:64
+msgid "show_signatures_tooltip"
+msgstr "Mostrar firmas existentes en el documento"
+
+#: src/ui/app_window.py:182
+msgid "manage_certificates_tooltip"
+msgstr "Gestionar certificados"
+
+#: src/ui/app_window.py:209
+msgid "signatures_found_toast"
+msgstr "Se encontraron {} firmas en el documento."
+
+#: src/ui/app_window.py:209
+msgid "go_to_signatures"
+msgstr "Ver Firmas"
+
+#: src/ui/app_window.py:248
+msgid "open_recent"
+msgstr "Abrir Recientes"
+
+#: src/ui/app_window.py:249
+msgid "sign_document"
+msgstr "Firmar Documento"
+
+#: src/ui/app_window.py:250 src/ui/stamp_editor_dialog.py:26
+msgid "edit_stamp_templates"
+msgstr "Editar Plantillas de Firma"
+
+#: src/ui/app_window.py:250 src/ui/preferences_window.py:73
+msgid "preferences"
+msgstr "Preferencias"
+
+#: src/ui/app_window.py:251 src/ui/components/welcome.py:53
+msgid "about"
+msgstr "Acerca de"
+
+#: src/ui/components/sidebar.py:63
+msgid "page_thumbnails"
+msgstr "Miniaturas de página"
+
+#: src/ui/components/welcome.py:47
+msgid "welcome_prompt_cert_ok"
+msgstr "Listo para firmar"
+
+#: src/ui/components/welcome.py:48
+msgid "welcome_button"
+msgstr "Abrir un PDF..."
+
+#: src/ui/components/welcome.py:49
+msgid "select_certificate"
+msgstr "Gestionar Certificados"
+
+#: src/ui/components/welcome.py:51
+msgid "welcome_prompt_no_cert"
+msgstr "Para empezar, añada un certificado"
+
+#: src/ui/components/welcome.py:52 src/ui/preferences_window.py:143
+msgid "add_certificate"
+msgstr "Añadir Certificado..."
+
+#: src/ui/preferences_window.py:74
+msgid "general"
+msgstr "General"
+
+#: src/ui/preferences_window.py:76 src/ui/preferences_window.py:77
+msgid "language"
+msgstr "Idioma"
+
+#: src/ui/preferences_window.py:78
+msgid "signature_settings"
+msgstr "Ajustes de Firma"
+
+#: src/ui/preferences_window.py:79
+msgid "signature_reason"
+msgstr "Razón para la firma (por defecto)"
+
+#: src/ui/preferences_window.py:80
+msgid "reason_placeholder"
+msgstr "Ej: De acuerdo con los términos"
+
+#: src/ui/preferences_window.py:81
+msgid "signature_location"
+msgstr "Ubicación de la firma (por defecto)"
+
+#: src/ui/preferences_window.py:82
+msgid "location_placeholder"
+msgstr "Ej: Madrid, España"
+
+#: src/ui/preferences_window.py:83
+msgid "certificates"
+msgstr "Certificados"
+
+#: src/ui/preferences_window.py:137 src/ui/stamp_editor_dialog.py:49
+msgid "delete"
+msgstr "Eliminar"
+
+#: src/ui/preferences_window.py:165
+msgid "confirm_delete_cert_title"
+msgstr "Confirmar Eliminación"
+
+#: src/ui/preferences_window.py:166
+msgid "confirm_delete_cert_message"
+msgstr "¿Está seguro de que desea eliminar permanentemente este certificado y su contraseña guardada?"
+
+#: src/ui/stamp_editor_dialog.py:29
+msgid "close_button"
+msgstr "Cerrar"
+
+#: src/ui/stamp_editor_dialog.py:46
+msgid "new"
+msgstr "Nueva"
+
+#: src/ui/stamp_editor_dialog.py:47
+msgid "duplicate"
+msgstr "Duplicar"
+
+#: src/ui/stamp_editor_dialog.py:48
+msgid "save"
+msgstr "Guardar"
+
+#: src/ui/stamp_editor_dialog.py:50
+msgid "set_as_active"
+msgstr "Usar para firmar"
+
+#: src/ui/stamp_editor_dialog.py:90
+msgid "stamp_editor_bold_tooltip"
+msgstr "Negrita"
+
+#: src/ui/stamp_editor_dialog.py:91
+msgid "stamp_editor_italic_tooltip"
+msgstr "Cursiva"
+
+#: src/ui/stamp_editor_dialog.py:92
+msgid "stamp_editor_underline_tooltip"
+msgstr "Subrayado"
+
+#: src/ui/stamp_editor_dialog.py:94
+msgid "font"
+msgstr "Fuente"
+
+#: src/ui/stamp_editor_dialog.py:97
+msgid "stamp_editor_font_tooltip"
+msgstr "Fuente"
+
+#: src/ui/stamp_editor_dialog.py:100
+msgid "size_small"
+msgstr "Pequeño"
+
+#: src/ui/stamp_editor_dialog.py:100
+msgid "size_normal"
+msgstr "Normal"
+
+#: src/ui/stamp_editor_dialog.py:100
+msgid "size_large"
+msgstr "Grande"
+
+#: src/ui/stamp_editor_dialog.py:100
+msgid "size_huge"
+msgstr "Enorme"
+
+#: src/ui/stamp_editor_dialog.py:101
+msgid "size"
+msgstr "Tamaño"
+
+#: src/ui/stamp_editor_dialog.py:104
+msgid "stamp_editor_size_tooltip"
+msgstr "Tamaño de fuente"
+
+#: src/ui/stamp_editor_dialog.py:107
+msgid "stamp_editor_color_tooltip"
+msgstr "Color de texto"
+
+#: src/ui/stamp_editor_dialog.py:242 src/ui/stamp_editor_dialog.py:305
+msgid "unsaved_changes_title"
+msgstr "Cambios sin Guardar"
+
+#: src/ui/stamp_editor_dialog.py:242
+msgid "unsaved_changes_message"
+msgstr "Tiene cambios sin guardar. ¿Desea continuar y descartarlos?"
+
+#: src/ui/stamp_editor_dialog.py:305
+msgid "confirm_close_message"
+msgstr "¿Cerrar sin guardar los cambios?"

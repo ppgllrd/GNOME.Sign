@@ -44,13 +44,13 @@ class WelcomeView(Gtk.Box):
         certs_exist = bool(app.cert_manager.get_all_certificate_details())
         
         if certs_exist:
-            self.status_page.set_title(app._("welcome_prompt_cert_ok"))
-            self.open_button.set_label(app._("welcome_button"))
-            self.prefs_button.set_label(app._("select_certificate"))
+            self.status_page.set_title(_("Ready to Sign"))
+            self.open_button.set_label(_("Open a PDF..."))
+            self.prefs_button.set_label(_("Manage Certificates"))
         else:
-            self.status_page.set_title(app._("welcome_prompt_no_cert"))
-            self.open_button.set_label(app._("add_certificate"))
-            self.prefs_button.set_label(app._("about"))
+            self.status_page.set_title(_("To begin, add a certificate"))
+            self.open_button.set_label(_("Add Certificate..."))
+            self.prefs_button.set_label(_("About"))
 
     def _on_open_clicked(self, button):
         """Handles the main action button click, either opening a file or the preferences."""
