@@ -17,6 +17,7 @@ class AppWindow(Adw.ApplicationWindow):
         self.signature_view_rects = []
         self.stamp_preview_pixbuf = None
         self.cached_credentials = None
+        self.search_highlight_rects = []
         self.set_default_size(900, 700); self.set_icon_name("org.pepeg.GnomeSign")
         self.set_hide_on_close(False)
         self._build_ui(Sidebar, WelcomeView); self._connect_signals()
@@ -44,6 +45,10 @@ class AppWindow(Adw.ApplicationWindow):
         self.header_bar.pack_start(self.nav_box)
         
         self.activity_spinner = Gtk.Spinner(); self.header_bar.pack_end(self.activity_spinner)
+
+        self.search_button = Gtk.ToggleButton(icon_name="edit-find-symbolic")
+        self.header_bar.pack_end(self.search_button)
+
         self.menu_button = Gtk.MenuButton(icon_name="open-menu-symbolic"); self.header_bar.pack_end(self.menu_button)
         self.show_sigs_button = Gtk.Button(icon_name="security-high-symbolic", visible=False); self.header_bar.pack_end(self.show_sigs_button)
         self.certs_button = Gtk.Button(icon_name="dialog-password-symbolic"); self.header_bar.pack_end(self.certs_button)
@@ -55,6 +60,14 @@ class AppWindow(Adw.ApplicationWindow):
         self.scrolled_window = Gtk.ScrolledWindow(hscrollbar_policy="never", vscrollbar_policy="automatic"); self.scrolled_window.set_child(self.drawing_area)
         self.stack.add_named(self.scrolled_window, "pdf_view")
         self.welcome_view = WelcomeView(); self.stack.add_named(self.welcome_view, "welcome_view")
+
+        self.search_bar = Gtk.SearchBar.new()
+        self.search_entry = Gtk.SearchEntry.new()
+        self.search_bar.set_child(self.search_entry)
+        self.search_bar.connect_entry(self.search_entry)
+        self.view_stacker.insert_child_after(self.search_bar, self.header_bar)
+        self.search_bar.set_key_capture_widget(self)
+        self.search_button.bind_property("active", self.search_bar, "search-mode-enabled", GObject.BindingFlags.BIDIRECTIONAL)
 
         self.signature_popover = Gtk.Popover.new()
         popover_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=6, margin_bottom=6, margin_start=10, margin_end=10)
@@ -70,6 +83,7 @@ class AppWindow(Adw.ApplicationWindow):
         self.open_button.connect("clicked", lambda w: app.activate_action("open"))
         self.sign_button.connect("clicked", lambda w: app.activate_action("sign"))
         self.certs_button.connect("clicked", lambda w: app.activate_action("manage_certs"))
+        self.search_entry.connect("search-changed", self._on_search_changed)
         self.show_sigs_button.connect("clicked", lambda w: app.activate_action("show_signatures"))
         self.signature_banner.connect("button-clicked", lambda w: app.activate_action("show_signatures"))
         self.prev_page_button.connect("clicked", app.on_prev_page_clicked)
@@ -128,6 +142,7 @@ class AppWindow(Adw.ApplicationWindow):
     def _on_page_changed(self, app, page, current_page, total_pages, keep_sidebar_view):
         """Handles the 'page-changed' signal, updating page navigation widgets."""
         self._update_signature_view_rects()
+        self.search_highlight_rects = [rect for page_num, rect in app.search_results if page_num == current_page]
         self.page_entry_button.set_label(f"{current_page + 1} / {total_pages}")
         self.prev_page_button.set_sensitive(current_page > 0)
         self.next_page_button.set_sensitive(current_page < total_pages - 1)
@@ -185,6 +200,15 @@ class AppWindow(Adw.ApplicationWindow):
                 tooltip = cert_details['subject_cn']
         self.certs_button.set_tooltip_text(tooltip)
     
+    def _on_search_changed(self, search_entry):
+        """Handles the 'search-changed' signal from the search entry."""
+        app = self.get_application()
+        text = search_entry.get_text()
+        if text:
+            app.search_text(text)
+        else:
+            app.clear_search()
+
     def _on_key_pressed(self, controller, keyval, keycode, state):
         """Handles key press events for page navigation and scrolling."""
         app = self.get_application()
@@ -248,6 +272,7 @@ class AppWindow(Adw.ApplicationWindow):
             menu.append_submenu(_("Open Recent"), recent_menu)
         menu.append_section(None, Gio.Menu.new()); menu.append(_("Sign Document"), "app.sign"); menu.append_section(None, Gio.Menu.new())
         menu.append(_("Edit Signature Templates"), "app.edit_stamps"); menu.append(_("Preferences"), "app.preferences"); menu.append_section(None, Gio.Menu.new())
+        menu.append(_("Print..."), "app.print")
         menu.append(_("About"), "app.about")
         self.menu_button.set_menu_model(menu)
         
@@ -347,6 +372,15 @@ class AppWindow(Adw.ApplicationWindow):
             view_w, view_h = (x1 - x0) * scale_factor, (y1 - y0) * scale_factor
             cr.set_source_rgba(1.0, 1.0, 0.0, 0.25); cr.rectangle(view_x, view_y, view_w, view_h); cr.fill()
             cr.set_source_rgb(0.9, 0.8, 0.0); cr.set_line_width(1.0); cr.rectangle(view_x, view_y, view_w, view_h); cr.stroke()
+
+        if self.search_highlight_rects and app.page and width > 0:
+            scale_factor = width / app.page.rect.width
+            for rect in self.search_highlight_rects:
+                x0, y0, x1, y1 = rect
+                view_x, view_y = x0 * scale_factor, y0 * scale_factor
+                view_w, view_h = (x1 - x0) * scale_factor, (y1 - y0) * scale_factor
+                cr.set_source_rgba(0.0, 0.0, 1.0, 0.25); cr.rectangle(view_x, view_y, view_w, view_h); cr.fill()
+
         if rect_to_draw := app.signature_rect or ((min(app.start_x, app.end_x), min(app.start_y, app.end_y), abs(app.end_x - app.start_x), abs(app.end_y - app.start_y)) if app.start_x != -1 else None):
             x, y, w, h = rect_to_draw
             if w < 5 or h < 5: cr.set_source_rgba(0.0, 0.5, 0.0, 0.5); cr.rectangle(x, y, w, h); cr.fill(); return

@@ -38,6 +38,13 @@ class Sidebar(Gtk.Box):
         self.signatures_listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.signatures_scrolled_window.set_child(self.signatures_listbox)
         self.stack.add_named(self.signatures_scrolled_window, "signatures")
+
+        # --- Search View ---
+        self.search_scrolled_window = Gtk.ScrolledWindow(hscrollbar_policy="never", vscrollbar_policy="automatic", vexpand=True)
+        self.search_listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
+        self.search_listbox.connect("row-selected", self._on_search_result_selected)
+        self.search_scrolled_window.set_child(self.search_listbox)
+        self.stack.add_named(self.search_scrolled_window, "search")
         
         # --- View Switcher Buttons ---
         switcher_box = Gtk.Box()
@@ -54,14 +61,21 @@ class Sidebar(Gtk.Box):
         self.signatures_button.connect("toggled", self._on_view_switched, "signatures")
         switcher_box.append(self.signatures_button)
 
+        self.search_button = Gtk.ToggleButton(icon_name="edit-find-symbolic")
+        self.search_button.set_group(self.pages_button)
+        self.search_button.connect("toggled", self._on_view_switched, "search")
+        switcher_box.append(self.search_button)
+
         self.block_signal = False
         self.connect("realize", self._on_realize)
         
     def _on_realize(self, widget):
         """Called when the widget is first realized (i.e., added to a toplevel window)."""
         app = self.get_ancestor(Adw.ApplicationWindow).get_application()
+        app.connect("search-results-changed", self._on_search_results_changed)
         self.pages_button.set_tooltip_text(_("Page Thumbnails"))
         self.signatures_button.set_tooltip_text(_("Show existing signatures in the document"))
+        self.search_button.set_tooltip_text(_("Search Document"))
     
     def _on_view_switched(self, button, view_name):
         """Callback to switch the visible child of the Gtk.Stack."""
@@ -158,6 +172,32 @@ class Sidebar(Gtk.Box):
     def _on_signature_row_activated(self, row, sig_obj):
         """Emits the 'signature-selected' signal when a signature row is activated."""
         self.emit("signature-selected", sig_obj)
+
+    def _on_search_results_changed(self, app, results):
+        """Handles the 'search-results-changed' signal from the application."""
+        self.populate_search_results(results)
+
+    def _on_search_result_selected(self, listbox, row):
+        """Emits the 'page-selected' signal when a user clicks a search result."""
+        if row:
+            self.emit("page-selected", row.page_num)
+
+    def populate_search_results(self, results):
+        """Fills the search results listbox with search results."""
+        while (row := self.search_listbox.get_row_at_index(0)):
+            self.search_listbox.remove(row)
+
+        if results:
+            self.search_button.set_visible(True)
+            for page_num, rect in results:
+                row = Adw.ActionRow.new()
+                row.page_num = page_num
+                row.set_title(f"Page {page_num + 1}")
+                row.set_subtitle(f"({rect.x0:.2f}, {rect.y0:.2f})")
+                row.set_activatable(True)
+                self.search_listbox.append(row)
+        else:
+            self.search_button.set_visible(False)
 
     def focus_on_signatures(self):
         """Scrolls the view to make the list of signatures visible and gives it focus."""

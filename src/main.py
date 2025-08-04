@@ -105,6 +105,7 @@ class GnomeSign(Adw.Application):
         'signatures-found': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
         'toast-request': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_PYOBJECT)),
         'highlight-rect-changed': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
+        'search-results-changed': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
     }
 
     def __init__(self):
@@ -120,7 +121,24 @@ class GnomeSign(Adw.Application):
         self.highlight_rect = None
         self.window, self.preferences_window = None, None
         self.signatures = []
+        self.search_results = []
     
+    def search_text(self, text):
+        """Searches for text in the document and updates the results."""
+        self.search_results = []
+        if self.doc:
+            for page_num in range(len(self.doc)):
+                page = self.doc.load_page(page_num)
+                results = page.search_for(text)
+                for res in results:
+                    self.search_results.append((page_num, res))
+        self.emit("search-results-changed", self.search_results)
+
+    def clear_search(self):
+        """Clears the search results."""
+        self.search_results = []
+        self.emit("search-results-changed", self.search_results)
+
     def do_startup(self):
         """Called when the application is starting up."""
         Adw.Application.do_startup(self)
@@ -171,7 +189,8 @@ class GnomeSign(Adw.Application):
             ("open", self.on_open_pdf_clicked), 
             ("preferences", self.on_preferences_clicked), ("manage_certs", self.on_preferences_clicked), 
             ("about", self.on_about_clicked), ("edit_stamps", self.on_edit_stamps_clicked),
-            ("show_signatures", self.on_show_signatures_clicked)
+            ("show_signatures", self.on_show_signatures_clicked),
+            ("print", self.on_print_document_clicked)
         ]
         for name, callback in simple_actions:
             action = Gio.SimpleAction.new(name, None); action.connect("activate", callback); self.add_action(action)
@@ -467,7 +486,43 @@ class GnomeSign(Adw.Application):
     def on_about_clicked(self, action, param):
         """Shows the 'About' dialog."""
         create_about_dialog(self.window, _)
+
+    def on_print_document_clicked(self, action, param):
+        """Handles the 'Print' action."""
+        if not self.doc:
+            return
+
+        print_op = Gtk.PrintOperation()
+        print_op.set_n_pages(len(self.doc))
+        print_op.set_job_name(os.path.basename(self.current_file_path))
+        print_op.connect("draw_page", self._on_draw_page_for_printing)
+
+        res = print_op.run(Gtk.PrintOperationAction.PRINT_DIALOG, self.window)
         
+        if res == Gtk.PrintOperationResult.ERROR:
+            show_error_dialog(self.window, _("Print Error"), _("There was an error printing the document."))
+        elif res == Gtk.PrintOperationResult.APPLY:
+            # User clicked "Print"
+            pass
+        elif res == Gtk.PrintOperationResult.CANCEL:
+            # User clicked "Cancel"
+            pass
+
+    def _on_draw_page_for_printing(self, operation, context, page_nr):
+        """Draws a single page for the print operation."""
+        cr = context.get_cairo_context()
+        page = self.doc.load_page(page_nr)
+
+        # Get page dimensions
+        width = context.get_width()
+        height = context.get_height()
+
+        # Render the PDF page to a Cairo surface
+        pix = page.get_pixmap(matrix=fitz.Matrix(width/page.rect.width, height/page.rect.height), alpha=False)
+        surface = Gdk.cairo_surface_create_from_pixbuf(GdkPixbuf.Pixbuf.new_from_bytes(GLib.Bytes.new(pix.samples), GdkPixbuf.Colorspace.RGB, False, 8, pix.width, pix.height, pix.stride), 0, None)
+        cr.set_source_surface(surface, 0, 0)
+        cr.paint()
+
     def _update_sign_action_state(self):
         """Centralized method to update the enabled state of the sign action."""
         can_sign = self.doc is not None and self.signature_rect is not None and self.active_cert_path is not None
