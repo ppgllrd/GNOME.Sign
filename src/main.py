@@ -98,6 +98,7 @@ class GnomeSign(Adw.Application):
         'signatures-found': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
         'toast-request': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_PYOBJECT)),
         'highlight-rect-changed': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
+        'search-highlights-updated': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
     }
 
     def __init__(self):
@@ -114,6 +115,8 @@ class GnomeSign(Adw.Application):
         self.highlight_rect = None
         self.window, self.preferences_window = None, None
         self.signatures = []
+        self.search_results = []
+        self.search_highlights_on_page = []
     
     def _(self, key):
         """A shorthand for the translation function."""
@@ -165,6 +168,11 @@ class GnomeSign(Adw.Application):
         sign_action.connect("activate", self.on_sign_document_clicked)
         sign_action.set_enabled(False) 
         self.add_action(sign_action)
+
+        print_action = Gio.SimpleAction.new("print", None)
+        print_action.connect("activate", self.on_print_clicked)
+        print_action.set_enabled(False)
+        self.add_action(print_action)
         
         simple_actions = [
             ("open", self.on_open_pdf_clicked), 
@@ -181,6 +189,7 @@ class GnomeSign(Adw.Application):
             if not os.path.exists(file_path): raise FileNotFoundError(f"File not found: {file_path}")
             if self.doc: self.doc.close()
             
+            self.clear_search()
             self.signatures = []
             try:
                 with open(file_path, 'rb') as f:
@@ -361,6 +370,57 @@ class GnomeSign(Adw.Application):
 
         self._perform_signing(private_key_pyca, certificate_pyca)
 
+    def on_print_clicked(self, action, param):
+        """Handles the 'Print' action."""
+        if not self.doc: return
+
+        print_op = Gtk.PrintOperation()
+        print_op.set_job_name(os.path.basename(self.current_file_path) if self.current_file_path else "Document")
+        print_op.set_n_pages(len(self.doc))
+        print_op.connect("draw_page", self._on_print_draw_page)
+
+        res = print_op.run(Gtk.PrintOperationAction.PRINT_DIALOG, self.window)
+
+        if res == Gtk.PrintOperationResult.ERROR:
+            show_error_dialog(self.window, self._("print_error_title"), self._("print_error_message").format(print_op.get_status_string()))
+        elif res == Gtk.PrintOperationResult.APPLY:
+            self.emit("toast-request", self._("print_success_toast"), None, None)
+
+    def _on_print_draw_page(self, operation, context, page_nr):
+        """Draws a single page for the print operation."""
+        try:
+            page = self.doc.load_page(page_nr)
+            cr = context.get_cairo_context()
+
+            # Get page dimensions from PDF and print context dimensions
+            pdf_width, pdf_height = page.rect.width, page.rect.height
+            page_setup = context.get_page_setup()
+            printable_width = page_setup.get_printable_width(Gtk.Unit.POINTS)
+            printable_height = page_setup.get_printable_height(Gtk.Unit.POINTS)
+
+            # Scale to fit printable area while maintaining aspect ratio
+            scale_w = printable_width / pdf_width
+            scale_h = printable_height / pdf_height
+            scale = min(scale_w, scale_h)
+
+            # Center the page
+            cr.save()
+            cr.translate(
+                (printable_width - pdf_width * scale) / 2,
+                (printable_height - pdf_height * scale) / 2
+            )
+            cr.scale(scale, scale)
+
+            # Render the page using Fitz's drawing device
+            dl = page.get_displaylist()
+            dl.run(fitz.TOOLS.new_device("cairo", cr), fitz.Matrix(1, 1))
+
+            cr.restore()
+
+        except Exception as e:
+            # It's hard to report errors from here, but we can log them.
+            print(f"Error drawing page {page_nr} for printing: {e}")
+
     def _generate_output_path(self, input_path):
         """
         Generates a unique output filename based on the input path.
@@ -473,13 +533,47 @@ class GnomeSign(Adw.Application):
     def on_about_clicked(self, action, param):
         """Shows the 'About' dialog."""
         create_about_dialog(self.window, self._)
+
+    def search_text(self, text):
+        """Performs a text search in the document and updates the UI."""
+        if not self.doc: return
+        self.search_results = []
+        for page_num, page in enumerate(self.doc):
+            results = page.search_for(text)
+            for rect in results:
+                self.search_results.append((page_num, rect))
+
+        # We need to transform the flat list of (page_num, rect) into a list for the sidebar
+        # The sidebar's populate_search_results expects a list of (page_num, result_text)
+        # For now, let's just pass the page number and a placeholder.
+        sidebar_results = [(page_num, "Match") for page_num, rect in self.search_results]
+        self.window.sidebar.populate_search_results(sidebar_results)
+
+        # Update highlights for the current page
+        self.display_page(self.current_page, keep_sidebar_view=True)
+
+    def clear_search(self):
+        """Clears the current search."""
+        if not self.search_results and not self.search_highlights_on_page: return
+        self.search_results = []
+        self.search_highlights_on_page = []
+        self.emit("search-highlights-updated", [])
+        if self.window:
+            self.window.sidebar.populate_search_results([])
+            self.window.drawing_area.queue_draw()
+
+    def _update_actions_state(self):
+        """Centralized method to update the enabled state of actions."""
+        doc_loaded = self.doc is not None
         
-    def _update_sign_action_state(self):
-        """Centralized method to update the enabled state of the sign action."""
-        can_sign = self.doc is not None and self.signature_rect is not None and self.active_cert_path is not None
+        can_sign = doc_loaded and self.signature_rect is not None and self.active_cert_path is not None
         sign_action = self.lookup_action("sign")
         if sign_action:
             sign_action.set_enabled(can_sign)
+
+        print_action = self.lookup_action("print")
+        if print_action:
+            print_action.set_enabled(doc_loaded)
     
     def reset_signature_state(self):
         """Resets all properties related to the current signature drawing/selection."""
@@ -488,13 +582,21 @@ class GnomeSign(Adw.Application):
         self.is_dragging_rect = False
         self.highlight_rect = None
         self.emit("signature-state-changed")
-        self._update_sign_action_state()
+        self._update_actions_state()
 
     def display_page(self, page_num, keep_sidebar_view=False):
         """Loads and displays a specific page of the current document."""
         if self.highlight_rect:
             self.highlight_rect = None
             self.emit("highlight-rect-changed", None)
+
+        self.search_highlights_on_page = []
+        if self.search_results:
+            for p_num, rect in self.search_results:
+                if p_num == page_num:
+                    self.search_highlights_on_page.append(rect)
+        self.emit("search-highlights-updated", self.search_highlights_on_page)
+
         if not self.doc or not (0 <= page_num < len(self.doc)):
             self.page = None; self.doc = None; self.current_file_path = None; self.display_pixbuf = None; self.signatures = []
             self.emit("document-changed", None)
@@ -560,7 +662,7 @@ class GnomeSign(Adw.Application):
             self.signature_rect = (x1, y1, width, height) if width > 5 and height > 5 else None
         self.is_dragging_rect = False
         self.emit("signature-state-changed")
-        self._update_sign_action_state()
+        self._update_actions_state()
 
     def get_parsed_stamp_text(self, certificate, override_template=None):
         """Parses a signature template, replacing placeholders with actual certificate data."""
@@ -589,7 +691,7 @@ class GnomeSign(Adw.Application):
         self.active_cert_path = path
         self.config.set_active_cert_path(path)
         self.emit("certificates-changed")
-        self._update_sign_action_state()
+        self._update_actions_state()
 
     def add_certificate(self, pkcs12_path, password):
         """Adds a new certificate, saves it, and notifies the UI."""

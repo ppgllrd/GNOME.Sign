@@ -2,7 +2,7 @@
 
 import gi
 gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1"); gi.require_version("PangoCairo", "1.0"); gi.require_version('GdkPixbuf', '2.0'); gi.require_version('Secret', '1')
-from gi.repository import Gtk, Adw, Gdk, Gio, GLib, GdkPixbuf, Secret
+from gi.repository import Gtk, Adw, Gdk, Gio, GLib, GdkPixbuf, Secret, GObject
 import os, fitz
 
 class AppWindow(Adw.ApplicationWindow):
@@ -15,6 +15,7 @@ class AppWindow(Adw.ApplicationWindow):
         self.signature_popover = None
         self.popover_active_for_sig = None
         self.signature_view_rects = []
+        self.search_highlights = []
         self.set_default_size(900, 700); self.set_icon_name("org.pepeg.GnomeSign")
         self.set_hide_on_close(False)
         self._build_ui(Sidebar, WelcomeView); self._connect_signals()
@@ -40,8 +41,15 @@ class AppWindow(Adw.ApplicationWindow):
         self.next_page_button = Gtk.Button(icon_name="go-next-symbolic")
         self.nav_box.append(self.prev_page_button); self.nav_box.append(self.page_entry_button); self.nav_box.append(self.next_page_button)
         self.header_bar.pack_start(self.nav_box)
+
+        self.search_revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_LEFT, reveal_child=False)
+        self.search_entry = Gtk.SearchEntry(hexpand=True)
+        self.search_revealer.set_child(self.search_entry)
+        self.header_bar.pack_start(self.search_revealer)
         
         self.activity_spinner = Gtk.Spinner(); self.header_bar.pack_end(self.activity_spinner)
+        self.search_button = Gtk.ToggleButton(icon_name="system-search-symbolic")
+        self.header_bar.pack_end(self.search_button)
         self.menu_button = Gtk.MenuButton(icon_name="open-menu-symbolic"); self.header_bar.pack_end(self.menu_button)
         self.show_sigs_button = Gtk.Button(icon_name="security-high-symbolic", visible=False); self.header_bar.pack_end(self.show_sigs_button)
         self.certs_button = Gtk.Button(icon_name="dialog-password-symbolic"); self.header_bar.pack_end(self.certs_button)
@@ -103,8 +111,26 @@ class AppWindow(Adw.ApplicationWindow):
         app.connect("signatures-found", self._on_signatures_found)
         app.connect("toast-request", self._on_toast_request)
         app.connect("language-changed", self._on_language_changed)
+        self.search_button.bind_property("active", self.search_revealer, "reveal-child", GObject.BindingFlags.BIDIRECTIONAL)
+        self.search_entry.connect("search-changed", self._on_search_changed)
         app.connect("highlight-rect-changed", lambda app, rect: self.drawing_area.queue_draw())
+        app.connect("search-highlights-updated", self._on_search_highlights_updated)
         app.connect("certificates-changed", self._on_certificates_changed)
+
+    def _on_search_highlights_updated(self, app, highlights):
+        """Handles the 'search-highlights-updated' signal."""
+        self.search_highlights = highlights
+        self.drawing_area.queue_draw()
+
+    def _on_search_changed(self, entry):
+        """Handles the 'search-changed' signal from the search entry."""
+        app = self.get_application()
+        text = entry.get_text().strip()
+        if len(text) > 2:
+            app.search_text(text)
+        else:
+            if hasattr(app, 'clear_search'):
+                app.clear_search()
 
     def _on_document_changed(self, app, doc):
         """Handles the 'document-changed' signal, updating the main view."""
@@ -112,7 +138,11 @@ class AppWindow(Adw.ApplicationWindow):
         self.stack.set_visible_child_name("pdf_view" if is_doc_loaded else "welcome_view")
         self.sidebar_button.set_sensitive(is_doc_loaded)
         self.nav_box.set_sensitive(is_doc_loaded)
-        if not is_doc_loaded and self.flap.get_reveal_flap(): self.flap.set_reveal_flap(False)
+        if not is_doc_loaded:
+            if self.flap.get_reveal_flap(): self.flap.set_reveal_flap(False)
+            self.search_button.set_active(False)
+            self.search_entry.set_text("")
+        self.search_button.set_sensitive(is_doc_loaded)
         self.title_widget.set_subtitle(os.path.basename(app.current_file_path) if is_doc_loaded and app.current_file_path else "")
         self.sidebar.populate(doc, app.signatures)
         self.welcome_view.update_ui(app)
@@ -160,6 +190,7 @@ class AppWindow(Adw.ApplicationWindow):
         self._build_and_set_menu(app)
         self.sidebar_button.set_tooltip_text(app._("toggle_sidebar_tooltip"))
         self.open_button.set_tooltip_text(app._("open_pdf"))
+        self.search_button.set_tooltip_text(app._("search_tooltip"))
         self.prev_page_button.set_tooltip_text(app._("prev_page"))
         self.next_page_button.set_tooltip_text(app._("next_page"))
         self.page_entry_button.set_tooltip_text(app._("jump_to_page_title"))
@@ -242,7 +273,10 @@ class AppWindow(Adw.ApplicationWindow):
             recent_menu = Gio.Menu.new()
             for file_path in recent_files: recent_menu.append(os.path.basename(file_path), f"app.open_recent({GLib.shell_quote(file_path)})")
             menu.append_submenu(app._("open_recent"), recent_menu)
-        menu.append_section(None, Gio.Menu.new()); menu.append(app._("sign_document"), "app.sign"); menu.append_section(None, Gio.Menu.new())
+        menu.append_section(None, Gio.Menu.new())
+        menu.append(app._("print_document"), "app.print")
+        menu.append(app._("sign_document"), "app.sign")
+        menu.append_section(None, Gio.Menu.new())
         menu.append(app._("edit_stamp_templates"), "app.edit_stamps"); menu.append(app._("preferences"), "app.preferences"); menu.append_section(None, Gio.Menu.new())
         menu.append(app._("about"), "app.about")
         self.menu_button.set_menu_model(menu)
@@ -293,6 +327,18 @@ class AppWindow(Adw.ApplicationWindow):
                 pix = app.page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
                 app.display_pixbuf = GdkPixbuf.Pixbuf.new_from_bytes(GLib.Bytes.new(pix.samples), GdkPixbuf.Colorspace.RGB, False, 8, pix.width, pix.height, pix.stride)
             Gdk.cairo_set_source_pixbuf(cr, app.display_pixbuf, 0, 0); cr.paint()
+
+        if app.page and width > 0:
+            scale_factor = width / app.page.rect.width
+            if self.search_highlights:
+                cr.set_source_rgba(0.0, 0.0, 1.0, 0.25) # Semi-transparent blue
+                for rect in self.search_highlights:
+                    x0, y0, x1, y1 = rect
+                    view_x, view_y = x0 * scale_factor, y0 * scale_factor
+                    view_w, view_h = (x1 - x0) * scale_factor, (y1 - y0) * scale_factor
+                    cr.rectangle(view_x, view_y, view_w, view_h)
+                    cr.fill()
+
         if app.highlight_rect and app.page and width > 0:
             scale_factor = width / app.page.rect.width
             x0, y0, x1, y1 = app.highlight_rect

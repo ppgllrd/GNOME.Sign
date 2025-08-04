@@ -38,6 +38,13 @@ class Sidebar(Gtk.Box):
         self.signatures_listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.signatures_scrolled_window.set_child(self.signatures_listbox)
         self.stack.add_named(self.signatures_scrolled_window, "signatures")
+
+        # --- Search View ---
+        self.search_scrolled_window = Gtk.ScrolledWindow(hscrollbar_policy="never", vscrollbar_policy="automatic", vexpand=True)
+        self.search_listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
+        self.search_listbox.connect("row-selected", self._on_search_row_selected)
+        self.search_scrolled_window.set_child(self.search_listbox)
+        self.stack.add_named(self.search_scrolled_window, "search")
         
         # --- View Switcher Buttons ---
         switcher_box = Gtk.Box()
@@ -48,6 +55,12 @@ class Sidebar(Gtk.Box):
         self.pages_button = Gtk.ToggleButton(icon_name="view-paged-symbolic")
         self.pages_button.connect("toggled", self._on_view_switched, "pages")
         switcher_box.append(self.pages_button)
+
+        self.search_button = Gtk.ToggleButton(icon_name="system-search-symbolic")
+        self.search_button.set_group(self.pages_button)
+        self.search_button.connect("toggled", self._on_view_switched, "search")
+        switcher_box.append(self.search_button)
+        self.search_button.set_visible(False) # Initially hidden
 
         self.signatures_button = Gtk.ToggleButton(icon_name="security-high-symbolic")
         self.signatures_button.set_group(self.pages_button)
@@ -62,6 +75,7 @@ class Sidebar(Gtk.Box):
         app = self.get_ancestor(Adw.ApplicationWindow).get_application()
         self.pages_button.set_tooltip_text(app._("page_thumbnails"))
         self.signatures_button.set_tooltip_text(app._("show_signatures_tooltip"))
+        self.search_button.set_tooltip_text(app._("search_results"))
     
     def _on_view_switched(self, button, view_name):
         """Callback to switch the visible child of the Gtk.Stack."""
@@ -72,10 +86,10 @@ class Sidebar(Gtk.Box):
         """Fills the sidebar panes with page thumbnails and signature information."""
         # Clear previous content
         self.pages_listbox.unselect_all()
-        while (row := self.pages_listbox.get_row_at_index(0)):
-            self.pages_listbox.remove(row)
-        while (row := self.signatures_listbox.get_row_at_index(0)):
-            self.signatures_listbox.remove(row)
+        while (row := self.pages_listbox.get_row_at_index(0)): self.pages_listbox.remove(row)
+        while (row := self.signatures_listbox.get_row_at_index(0)): self.signatures_listbox.remove(row)
+        while (row := self.search_listbox.get_row_at_index(0)): self.search_listbox.remove(row)
+        self.search_button.set_visible(False)
 
         if not doc: 
             self.set_visible(False)
@@ -154,6 +168,41 @@ class Sidebar(Gtk.Box):
         """Emits the 'page-selected' signal when a user clicks a page thumbnail."""
         if row and not self.block_signal: 
             self.emit("page-selected", row.get_index())
+
+    def _on_search_row_selected(self, listbox, row):
+        """Emits the 'page-selected' signal when a user clicks a search result."""
+        if row and not self.block_signal:
+            self.emit("page-selected", row.page_num)
+
+    def populate_search_results(self, results):
+        """Fills the search results list."""
+        app = self.get_ancestor(Adw.ApplicationWindow).get_application()
+        while (row := self.search_listbox.get_row_at_index(0)): self.search_listbox.remove(row)
+
+        if not results:
+            self.search_button.set_visible(False)
+            # Switch back to pages view if search results are cleared
+            if self.search_button.get_active():
+                self.pages_button.set_active(True)
+            return
+
+        page_results = {}
+        for page_num, result_text in results:
+            if page_num not in page_results:
+                page_results[page_num] = 0
+            page_results[page_num] += 1
+
+        for page_num, count in sorted(page_results.items()):
+            row = Adw.ActionRow.new()
+            row.page_num = page_num
+            row.set_title(app._("page_num_label").format(page_num + 1))
+            row.set_subtitle(app._("matches_label").format(count))
+            row.set_activatable(True)
+            self.search_listbox.append(row)
+
+        self.search_button.set_visible(True)
+        self.search_button.set_active(True)
+        self.stack.set_visible_child_name("search")
 
     def _on_signature_row_activated(self, row, sig_obj):
         """Emits the 'signature-selected' signal when a signature row is activated."""
