@@ -558,6 +558,11 @@ class GnomeSign(Adw.Application):
             x1, y1 = min(self.start_x, self.end_x), min(self.start_y, self.end_y)
             width, height = abs(self.start_x - self.end_x), abs(self.start_y - self.end_y)
             self.signature_rect = (x1, y1, width, height) if width > 5 and height > 5 else None
+
+        if self.window and self.signature_rect:
+            _, _, w, h = self.signature_rect
+            self.window._update_and_cache_stamp_preview(w, h)
+
         self.is_dragging_rect = False
         self.emit("signature-state-changed")
         self._update_sign_action_state()

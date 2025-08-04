@@ -15,6 +15,8 @@ class AppWindow(Adw.ApplicationWindow):
         self.signature_popover = None
         self.popover_active_for_sig = None
         self.signature_view_rects = []
+        self.stamp_preview_pixbuf = None
+        self.cached_credentials = None
         self.set_default_size(900, 700); self.set_icon_name("org.pepeg.GnomeSign")
         self.set_hide_on_close(False)
         self._build_ui(Sidebar, WelcomeView); self._connect_signals()
@@ -169,6 +171,8 @@ class AppWindow(Adw.ApplicationWindow):
     
     def _on_certificates_changed(self, app):
         """Handles the 'certificates-changed' signal."""
+        self.cached_credentials = None
+        self.stamp_preview_pixbuf = None
         self._update_certs_button_tooltip()
         self._on_signature_state_changed(app)
 
@@ -284,6 +288,49 @@ class AppWindow(Adw.ApplicationWindow):
         clamped_pos = max(0, min(target_pos, vadjustment.get_upper() - vadjustment.get_page_size()))
         vadjustment.set_value(clamped_pos); return GLib.SOURCE_REMOVE
 
+    def _update_and_cache_stamp_preview(self, width, height):
+        """
+        Generates and caches the signature stamp preview pixbuf.
+        This is an expensive operation and should only be called when necessary.
+        """
+        app = self.get_application()
+
+        if self.stamp_preview_pixbuf and self.stamp_preview_pixbuf.get_width() == int(width) and self.stamp_preview_pixbuf.get_height() == int(height):
+            return
+
+        self.stamp_preview_pixbuf = None
+
+        if not app.active_cert_path or not app.page or width <= 20 or height <= 20:
+            return
+
+        if not self.cached_credentials:
+            password = Secret.password_lookup_sync(
+                app.cert_manager.KEYRING_SCHEMA, {"path": app.active_cert_path}, None
+            )
+            if not password:
+                return
+
+            credentials = app.cert_manager.get_credentials(app.active_cert_path, password)
+            if not credentials or not credentials[1]:
+                return
+            self.cached_credentials = credentials[1]
+
+        certificate_pyca = self.cached_credentials
+
+        try:
+            from stamp_creator import HtmlStamp, pango_to_html
+            parsed_pango_text = app.get_parsed_stamp_text(certificate_pyca)
+            html_content = pango_to_html(parsed_pango_text)
+
+            scale = app.page.rect.width / self.drawing_area.get_width() if self.drawing_area.get_width() > 0 else 1
+
+            stamp_creator = HtmlStamp(html_content=html_content, width=width * scale, height=height * scale)
+
+            self.stamp_preview_pixbuf = stamp_creator.get_pixbuf(int(width), int(height))
+        except Exception as e:
+            print(f"Error generating stamp preview: {e}")
+            self.stamp_preview_pixbuf = None
+
     def _draw_page_and_rect(self, drawing_area, cr, width, height):
         """Draw callback for the main canvas; renders the PDF page and the signature rectangle."""
         app = self.get_application()
@@ -305,15 +352,10 @@ class AppWindow(Adw.ApplicationWindow):
             if w < 5 or h < 5: cr.set_source_rgba(0.0, 0.5, 0.0, 0.5); cr.rectangle(x, y, w, h); cr.fill(); return
             cr.set_source_rgb(0.0, 0.5, 0.0); cr.set_line_width(1.5); cr.rectangle(x, y, w, h); cr.stroke_preserve(); cr.set_source_rgba(1.0, 1.0, 1.0, 0.8); cr.fill()
             if w > 20 and h > 20 and app.active_cert_path:
-                if password := Secret.password_lookup_sync(app.cert_manager.KEYRING_SCHEMA, {"path": app.active_cert_path}, None):
-                        _, certificate_pyca = app.cert_manager.get_credentials(app.active_cert_path, password)
-                        if certificate_pyca: 
-                            from stamp_creator import HtmlStamp, pango_to_html
-                            parsed_pango_text = app.get_parsed_stamp_text(certificate_pyca)
-                            html_content = pango_to_html(parsed_pango_text)
-                            scale = app.page.rect.width / self.drawing_area.get_width() if self.drawing_area.get_width() > 0 else 1
-                            stamp_creator = HtmlStamp(html_content=html_content, width=w * scale, height=h * scale)
-                            if stamp_pixbuf := stamp_creator.get_pixbuf(int(w), int(h)): Gdk.cairo_set_source_pixbuf(cr, stamp_pixbuf, x, y); cr.paint()
+                # Preview generation is now cached. We just draw the pixbuf if it exists.
+                if self.stamp_preview_pixbuf:
+                    Gdk.cairo_set_source_pixbuf(cr, self.stamp_preview_pixbuf, x, y)
+                    cr.paint()
 
     def _on_toast_dismissed(self, toast):
         """Callback for a toast's 'dismissed' signal."""
