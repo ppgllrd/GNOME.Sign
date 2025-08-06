@@ -43,8 +43,21 @@ class AppWindow(Adw.ApplicationWindow):
         self.header_bar.pack_start(self.nav_box)
 
         self.search_revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_LEFT, reveal_child=False)
+        search_box = Gtk.Box(spacing=6)
         self.search_entry = Gtk.SearchEntry(hexpand=True)
-        self.search_revealer.set_child(self.search_entry)
+        search_box.append(self.search_entry)
+
+        self.search_nav_box = Gtk.Box()
+        self.search_nav_box.get_style_context().add_class("linked")
+        self.prev_search_button = Gtk.Button(icon_name="go-up-symbolic")
+        self.next_search_button = Gtk.Button(icon_name="go-down-symbolic")
+        self.prev_search_button.set_tooltip_text(app._("prev_result_tooltip"))
+        self.next_search_button.set_tooltip_text(app._("next_result_tooltip"))
+        self.search_nav_box.append(self.prev_search_button)
+        self.search_nav_box.append(self.next_search_button)
+        search_box.append(self.search_nav_box)
+
+        self.search_revealer.set_child(search_box)
         self.header_bar.pack_start(self.search_revealer)
         
         self.activity_spinner = Gtk.Spinner(); self.header_bar.pack_end(self.activity_spinner)
@@ -84,6 +97,8 @@ class AppWindow(Adw.ApplicationWindow):
         self.sidebar_button.connect("toggled", self.on_sidebar_toggled)
         self.sidebar.connect("page-selected", self._on_sidebar_page_selected)
         self.flap.connect("notify::reveal-flap", self.on_flap_reveal_changed)
+        self.prev_search_button.connect("clicked", lambda w: app.previous_search_result())
+        self.next_search_button.connect("clicked", lambda w: app.next_search_result())
         
         self.drawing_area.set_draw_func(self._draw_page_and_rect)
         self.drawing_area.connect("resize", self._on_drawing_area_resize)
@@ -115,12 +130,28 @@ class AppWindow(Adw.ApplicationWindow):
         self.search_entry.connect("search-changed", self._on_search_changed)
         app.connect("highlight-rect-changed", lambda app, rect: self.drawing_area.queue_draw())
         app.connect("search-highlights-updated", self._on_search_highlights_updated)
+        app.connect("search-result-selected", self._on_search_result_selected)
         app.connect("certificates-changed", self._on_certificates_changed)
+
+    def _on_search_result_selected(self, app, result):
+        """Handles the 'search-result-selected' signal."""
+        self.sidebar.select_search_result(app.current_search_result_index)
+        self.scroll_to_rect(result.rect)
+        self.drawing_area.queue_draw()
 
     def _on_search_highlights_updated(self, app, highlights):
         """Handles the 'search-highlights-updated' signal."""
         self.search_highlights = highlights
         self.drawing_area.queue_draw()
+
+    def update_search_nav_buttons(self):
+        """Updates the sensitivity of the search navigation buttons."""
+        app = self.get_application()
+        num_results = len(app.search_results)
+        self.search_nav_box.set_visible(num_results > 0)
+        if num_results > 0:
+            self.prev_search_button.set_sensitive(app.current_search_result_index > 0)
+            self.next_search_button.set_sensitive(app.current_search_result_index < num_results - 1)
 
     def _on_search_changed(self, entry):
         """Handles the 'search-changed' signal from the search entry."""
@@ -148,6 +179,7 @@ class AppWindow(Adw.ApplicationWindow):
         self.welcome_view.update_ui(app)
         self.hide_signature_info()
         self._on_signature_state_changed(app)
+        self.update_search_nav_buttons()
 
     def _on_sidebar_page_selected(self, sidebar, page_num):
         """Handles the 'page-selected' signal from the sidebar."""

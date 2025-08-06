@@ -34,6 +34,13 @@ def is_running_in_flatpak():
     """Checks if the application is running inside a Flatpak sandbox."""
     return os.getenv('FLATPAK_ID') is not None
 
+class SearchResult:
+    """A data class to hold information about a single text search result."""
+    def __init__(self, page_num, rect, context):
+        self.page_num = page_num
+        self.rect = rect
+        self.context = context
+
 class SignatureDetails:
     """A data class to hold processed information about a digital signature."""
     def __init__(self, pyhanko_sig, validation_status, page_num, rect):
@@ -99,6 +106,7 @@ class GnomeSign(Adw.Application):
         'toast-request': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_PYOBJECT)),
         'highlight-rect-changed': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
         'search-highlights-updated': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
+        'search-result-selected': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
     }
 
     def __init__(self):
@@ -117,6 +125,7 @@ class GnomeSign(Adw.Application):
         self.signatures = []
         self.search_results = []
         self.search_highlights_on_page = []
+        self.current_search_result_index = -1
     
     def _(self, key):
         """A shorthand for the translation function."""
@@ -537,35 +546,75 @@ class GnomeSign(Adw.Application):
     def search_text(self, text):
         """Performs a text search in the document and updates the UI."""
         if not self.doc: return
-        self.search_results = []
-        for page_num, page in enumerate(self.doc):
-            results = page.search_for(text)
-            for rect in results:
-                self.search_results.append((page_num, rect))
+        self.clear_search()
 
-        # We need to transform the flat list of (page_num, rect) into a list for the sidebar
-        # The sidebar's populate_search_results expects a list of (page_num, result_text)
-        # For now, let's just pass the page number and a placeholder.
-        sidebar_results = [(page_num, "Match") for page_num, rect in self.search_results]
-        self.window.sidebar.populate_search_results(sidebar_results)
+        for page_num, page in enumerate(self.doc):
+            # The `search_for` method with `text` will return rectangles.
+            # To get context, we need to extract words.
+            words = page.get_text("words")
+            search_len = len(text)
+
+            # This is a simplified context extraction.
+            # A more robust solution might involve joining words and then searching.
+            for i, word in enumerate(words):
+                word_text = word[4]
+                if text.lower() in word_text.lower():
+                    # Simple context: get a few words before and after.
+                    start_index = max(0, i - 5)
+                    end_index = min(len(words), i + 6)
+                    context_words = [w[4] for w in words[start_index:end_index]]
+                    context = " ".join(context_words)
+
+                    # Create a rect for the found word
+                    rect = fitz.Rect(word[:4])
+                    self.search_results.append(SearchResult(page_num, rect, context))
+
+        self.window.sidebar.populate_search_results(self.search_results)
+        if self.search_results:
+            self.select_search_result(0)
 
         # Update highlights for the current page
         self.display_page(self.current_page, keep_sidebar_view=True)
 
     def clear_search(self):
         """Clears the current search."""
-        if not self.search_results and not self.search_highlights_on_page: return
         self.search_results = []
         self.search_highlights_on_page = []
+        self.current_search_result_index = -1
         self.emit("search-highlights-updated", [])
         if self.window:
             self.window.sidebar.populate_search_results([])
             self.window.drawing_area.queue_draw()
+            self.window.update_search_nav_buttons()
+
+    def select_search_result(self, index):
+        """Selects a search result by its index."""
+        if not (0 <= index < len(self.search_results)):
+            return
+
+        self.current_search_result_index = index
+        result = self.search_results[index]
+
+        self.display_page(result.page_num, keep_sidebar_view=True)
+        self.highlight_rect = result.rect
+        self.emit("search-result-selected", result)
+        if self.window:
+            self.window.update_search_nav_buttons()
+
+    def next_search_result(self, button=None):
+        """Navigates to the next search result."""
+        if self.current_search_result_index < len(self.search_results) - 1:
+            self.select_search_result(self.current_search_result_index + 1)
+
+    def previous_search_result(self, button=None):
+        """Navigates to the previous search result."""
+        if self.current_search_result_index > 0:
+            self.select_search_result(self.current_search_result_index - 1)
 
     def _update_actions_state(self):
         """Centralized method to update the enabled state of actions."""
         doc_loaded = self.doc is not None
-        
+
         can_sign = doc_loaded and self.signature_rect is not None and self.active_cert_path is not None
         sign_action = self.lookup_action("sign")
         if sign_action:
