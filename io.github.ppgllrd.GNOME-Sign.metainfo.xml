@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>org.pepeg.GnomeSign</id>
+  <id>io.github.ppgllrd.GNOME-Sign</id>
   <name>GnomeSign</name>
   <summary>Sign PDF documents with digital certificates</summary>
   <summary xml:lang="es">Firma documentos PDF con certificados digitales</summary>
@@ -30,7 +30,7 @@
   <url type="homepage">https://github.com/ppgllrd/GNOME.Sign</url>
   <url type="bugtracker">https://github.com/ppgllrd/GNOME.Sign/issues</url>
   <url type="vcs-browser">https://github.com/ppgllrd/GNOME.Sign</url>
-  <launchable type="desktop-id">org.pepeg.GnomeSign.desktop</launchable>
+  <launchable type="desktop-id">io.github.ppgllrd.GNOME-Sign.desktop</launchable>
   <provides><binary>gnomesign</binary></provides>
   <releases><release version="1.0" date="2024-07-24"/></releases>
   <content_rating type="oars-1.1" />

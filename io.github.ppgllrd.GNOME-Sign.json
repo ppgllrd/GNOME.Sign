@@ -1,5 +1,5 @@
 {
-  "app-id": "org.pepeg.GnomeSign",
+  "app-id": "io.github.ppgllrd.GNOME-Sign",
   "runtime": "org.gnome.Platform",
   "runtime-version": "48",
   "sdk": "org.gnome.Sdk",
@@ -26,9 +26,9 @@
         "install -D -t /app/share/gnomesign src/*.py",
         "install -D -t /app/share/gnomesign/ui src/ui/*.py",
         "install -D -t /app/share/gnomesign/ui/components src/ui/components/*.py",
-        "install -D -t /app/share/icons/hicolor/scalable/apps svg/org.pepeg.GnomeSign.svg",
-        "install -D -t /app/share/applications org.pepeg.GnomeSign.desktop",
-        "install -D -t /app/share/metainfo/ org.pepeg.GnomeSign.metainfo.xml"
+        "install -D -t /app/share/icons/hicolor/scalable/apps svg/io.github.ppgllrd.GNOME-Sign.svg",
+        "install -D -t /app/share/applications io.github.ppgllrd.GNOME-Sign.desktop",
+        "install -D -t /app/share/metainfo/ io.github.ppgllrd.GNOME-Sign.metainfo.xml"
       ],
       "sources": [
         { "type": "dir", "path": "." },

@@ -23,11 +23,11 @@ This method ensures that all dependencies are bundled, providing a consistent an
 1.  **Prerequisites**: Make sure you have `flatpak` and `flatpak-builder` installed.
 2.  **Build and Install**:
     ```bash
-    flatpak-builder build-dir org.pepeg.GnomeSign.json --user --install --force-clean
+    flatpak-builder build-dir io.github.ppgllrd.GNOME-Sign.json --user --install --force-clean
     ```
 3.  **Run**:
     ```bash
-    flatpak run org.pepeg.GnomeSign
+    flatpak run io.github.ppgllrd.GNOME-Sign
     ```
 
 ### Manual Installation (for Development)

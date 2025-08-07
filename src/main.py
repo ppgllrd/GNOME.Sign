@@ -111,7 +111,7 @@ class GnomeSign(Adw.Application):
 
     def __init__(self):
         """Initializes the application."""
-        super().__init__(application_id="org.pepeg.GnomeSign", flags=Gio.ApplicationFlags.HANDLES_OPEN)
+        super().__init__(application_id="io.github.ppgllrd.GNOME-Sign", flags=Gio.ApplicationFlags.HANDLES_OPEN)
         self.config = ConfigManager()
         self.i18n = I18NManager()
         self.cert_manager = CertificateManager()

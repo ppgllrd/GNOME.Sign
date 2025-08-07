@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Application name
-APP_ID="org.pepeg.GnomeSign"
+APP_ID="io.github.ppgllrd.GNOME-Sign"
 
 echo "--- Generating modules ---"
 req2flatpak --requirements-file requirements.txt --target-platforms 312-x86_64 312-aarch64 > python-modules.json

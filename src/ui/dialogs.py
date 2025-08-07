@@ -13,7 +13,7 @@ def create_about_dialog(parent, i18n_func):
     dialog.set_program_name("GnomeSign")
     dialog.set_version("1.0")
     dialog.set_comments(i18n_func("sign_reason"))
-    dialog.set_logo_icon_name("org.pepeg.GnomeSign") 
+    dialog.set_logo_icon_name("io.github.ppgllrd.GNOME-Sign")
     dialog.set_website("https://github.com/ppgllrd/GNOME.Sign")
     dialog.set_authors(["Pepe Gallardo", "Gemini"])
     dialog.present()

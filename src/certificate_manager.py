@@ -4,7 +4,7 @@ import gi
 gi.require_version('Secret', '1')
 from gi.repository import Secret
 
-KEYRING_SCHEMA = Secret.Schema.new("org.pepeg.GnomeSign.p12",
+KEYRING_SCHEMA = Secret.Schema.new("io.github.ppgllrd.GNOME-Sign.p12",
                                    Secret.SchemaFlags.NONE,
                                    {"path": Secret.SchemaAttributeType.STRING})
 

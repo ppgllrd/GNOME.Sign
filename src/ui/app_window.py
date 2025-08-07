@@ -16,7 +16,7 @@ class AppWindow(Adw.ApplicationWindow):
         self.popover_active_for_sig = None
         self.signature_view_rects = []
         self.search_highlights = []
-        self.set_default_size(900, 700); self.set_icon_name("org.pepeg.GnomeSign")
+        self.set_default_size(900, 700); self.set_icon_name("io.github.ppgllrd.GNOME-Sign")
         self.set_hide_on_close(False)
         self._build_ui(Sidebar, WelcomeView); self._connect_signals()
 
