@@ -40,12 +40,17 @@ class AppWindow(Adw.ApplicationWindow):
         self.page_entry_button = Gtk.Button(label="- / -"); self.page_entry_button.get_style_context().add_class("flat")
         self.next_page_button = Gtk.Button(icon_name="go-next-symbolic")
         self.nav_box.append(self.prev_page_button); self.nav_box.append(self.page_entry_button); self.nav_box.append(self.next_page_button)
+
         self.header_bar.pack_start(self.nav_box)
 
         self.search_revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_LEFT, reveal_child=False)
         search_box = Gtk.Box(spacing=6)
         self.search_entry = Gtk.SearchEntry(hexpand=True)
         search_box.append(self.search_entry)
+
+        self.search_button = Gtk.ToggleButton(icon_name="system-search-symbolic")
+        self.search_button.set_action_name("app.toggle_search")
+        self.header_bar.pack_start(self.search_button)
 
         self.search_nav_box = Gtk.Box()
         self.search_nav_box.get_style_context().add_class("linked")
@@ -61,16 +66,17 @@ class AppWindow(Adw.ApplicationWindow):
         self.header_bar.pack_start(self.search_revealer)
         
         self.activity_spinner = Gtk.Spinner(); self.header_bar.pack_end(self.activity_spinner)
-        self.search_button = Gtk.ToggleButton(icon_name="system-search-symbolic")
-        self.header_bar.pack_end(self.search_button)
         self.menu_button = Gtk.MenuButton(icon_name="open-menu-symbolic"); self.header_bar.pack_end(self.menu_button)
-        self.show_sigs_button = Gtk.Button(icon_name="security-high-symbolic", visible=False); self.header_bar.pack_end(self.show_sigs_button)
+        self.show_sigs_button = Gtk.Button(icon_name="security-high-symbolic")
+        self.show_sigs_button.set_action_name("app.show_signatures")
+        self.header_bar.pack_end(self.show_sigs_button)
         self.certs_button = Gtk.Button(icon_name="dialog-password-symbolic"); self.header_bar.pack_end(self.certs_button)
         self.sign_button = Gtk.Button(icon_name="document-edit-symbolic"); self.header_bar.pack_end(self.sign_button)
         
         self.sidebar = Sidebar(); self.flap.set_flap(self.sidebar)
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.SLIDE_UP_DOWN, vexpand=True); self.flap.set_content(self.stack)
         self.drawing_area = Gtk.DrawingArea(hexpand=True, vexpand=True)
+        self.drawing_area.set_can_focus(True)
         self.scrolled_window = Gtk.ScrolledWindow(hscrollbar_policy="never", vscrollbar_policy="automatic"); self.scrolled_window.set_child(self.drawing_area)
         self.stack.add_named(self.scrolled_window, "pdf_view")
         self.welcome_view = WelcomeView(); self.stack.add_named(self.welcome_view, "welcome_view")
@@ -89,7 +95,6 @@ class AppWindow(Adw.ApplicationWindow):
         self.open_button.connect("clicked", lambda w: app.activate_action("open"))
         self.sign_button.connect("clicked", lambda w: app.activate_action("sign"))
         self.certs_button.connect("clicked", lambda w: app.activate_action("manage_certs"))
-        self.show_sigs_button.connect("clicked", lambda w: app.activate_action("show_signatures"))
         self.signature_banner.connect("button-clicked", lambda w: app.activate_action("show_signatures"))
         self.prev_page_button.connect("clicked", app.on_prev_page_clicked)
         self.next_page_button.connect("clicked", app.on_next_page_clicked)
@@ -97,8 +102,11 @@ class AppWindow(Adw.ApplicationWindow):
         self.sidebar_button.connect("toggled", self.on_sidebar_toggled)
         self.sidebar.connect("page-selected", self._on_sidebar_page_selected)
         self.flap.connect("notify::reveal-flap", self.on_flap_reveal_changed)
-        self.prev_search_button.connect("clicked", lambda w: app.previous_search_result())
-        self.next_search_button.connect("clicked", lambda w: app.next_search_result())
+        self.prev_search_button.connect("clicked", 
+            lambda w: (self._prepare_ui_for_search_navigation(), app.previous_search_result()))        
+        self.next_search_button.connect("clicked", 
+            lambda w: (self._prepare_ui_for_search_navigation(), app.next_search_result()))
+        self.search_entry.connect("activate", self._on_search_entry_activated)
         
         self.drawing_area.set_draw_func(self._draw_page_and_rect)
         self.drawing_area.connect("resize", self._on_drawing_area_resize)
@@ -126,23 +134,68 @@ class AppWindow(Adw.ApplicationWindow):
         app.connect("signatures-found", self._on_signatures_found)
         app.connect("toast-request", self._on_toast_request)
         app.connect("language-changed", self._on_language_changed)
-        self.search_button.bind_property("active", self.search_revealer, "reveal-child", GObject.BindingFlags.BIDIRECTIONAL)
+        self.search_button.bind_property("active", self.search_revealer, "reveal-child", GObject.BindingFlags.DEFAULT)
         self.search_entry.connect("search-changed", self._on_search_changed)
+        self.search_revealer.connect("notify::reveal-child", self._on_search_revealer_state_changed)
         app.connect("highlight-rect-changed", lambda app, rect: self.drawing_area.queue_draw())
         app.connect("search-highlights-updated", self._on_search_highlights_updated)
         app.connect("search-result-selected", self._on_search_result_selected)
         app.connect("certificates-changed", self._on_certificates_changed)
 
+    def _on_search_revealer_state_changed(self, revealer, pspec):
+        """
+        Handles focus management when the search bar is shown or hidden.
+        This is the definitive and correct way to handle this focus battle.
+        """
+        if revealer.get_reveal_child():
+            # WHEN SHOWING: Schedule a focus grab on the entry.
+            # The timeout ensures this runs *after* the widget is fully visible.
+            GLib.timeout_add(50, self.search_entry.grab_focus)
+        else:
+            # WHEN HIDING: Schedule a focus grab on the main drawing area.
+            # The timeout ensures this runs *after* GTK's default focus handling
+            # and the toggle button's deactivation have completed.
+            GLib.timeout_add(50, self.drawing_area.grab_focus)
+
+    def _on_search_button_focus_leave(self, controller):
+        """
+        This is the definitive solution to the focus problem.
+        It's called when the focus is about to leave the search toggle button.
+        """
+        if not self.search_button.get_active():
+            self.drawing_area.grab_focus()
+    
     def _on_search_result_selected(self, app, result):
         """Handles the 'search-result-selected' signal."""
-        self.sidebar.select_search_result(app.current_search_result_index)
-        self.scroll_to_rect(result.rect)
+        self.sidebar.select_search_result(app.current_search_result_index)        
+        if app.highlight_rect:
+            self.scroll_to_rect(app.highlight_rect)            
         self.drawing_area.queue_draw()
 
     def _on_search_highlights_updated(self, app, highlights):
         """Handles the 'search-highlights-updated' signal."""
         self.search_highlights = highlights
         self.drawing_area.queue_draw()
+
+    def _on_search_entry_activated(self, entry):
+        """
+        Handles the user pressing Enter in the search box.
+        It prepares the UI and moves to the next search result.
+        """
+        self._prepare_ui_for_search_navigation()
+        self.get_application().next_search_result()
+    
+    def _prepare_ui_for_search_navigation(self):
+        """
+        A reusable method that ensures the sidebar is open
+        and showing the search results list before navigation.
+        """
+        app = self.get_application()
+        if not app.search_results:
+            return 
+        if not self.flap.get_reveal_flap():
+            self.flap.set_reveal_flap(True)
+        self.sidebar.focus_on_search()
 
     def update_search_nav_buttons(self):
         """Updates the sensitivity of the search navigation buttons."""
@@ -171,8 +224,8 @@ class AppWindow(Adw.ApplicationWindow):
         self.nav_box.set_sensitive(is_doc_loaded)
         if not is_doc_loaded:
             if self.flap.get_reveal_flap(): self.flap.set_reveal_flap(False)
-            self.search_button.set_active(False)
-            self.search_entry.set_text("")
+        self.search_button.set_active(False)
+        self.search_entry.set_text("")
         self.search_button.set_sensitive(is_doc_loaded)
         self.title_widget.set_subtitle(os.path.basename(app.current_file_path) if is_doc_loaded and app.current_file_path else "")
         self.sidebar.populate(doc, app.signatures)
@@ -306,6 +359,7 @@ class AppWindow(Adw.ApplicationWindow):
             for file_path in recent_files: recent_menu.append(os.path.basename(file_path), f"app.open_recent({GLib.shell_quote(file_path)})")
             menu.append_submenu(app._("open_recent"), recent_menu)
         menu.append_section(None, Gio.Menu.new())
+        menu.append(app._("show_signatures_menu_item"), "app.show_signatures")
         menu.append(app._("print_document"), "app.print")
         menu.append(app._("sign_document"), "app.sign")
         menu.append_section(None, Gio.Menu.new())

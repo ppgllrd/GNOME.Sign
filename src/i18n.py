@@ -62,7 +62,13 @@ class I18NManager:
                 "stamp_editor_font_tooltip": "Fuente",
                 "stamp_editor_size_tooltip": "Tamaño de fuente",
                 "stamp_editor_color_tooltip": "Color de texto",
-                "save_pdf_dialog_title": "Guardar PDF Firmado"
+                "save_pdf_dialog_title": "Guardar PDF Firmado",
+                "search_tooltip": "Buscar en el documento",
+                "search_results": "Resultados de búsqueda",
+                "prev_result_tooltip": "Resultado anterior",
+                "next_result_tooltip": "Siguiente resultado",
+                "print_document": "Imprimir Documento...",
+                "show_signatures_menu_item": "Mostrar Firmas"
             },
             "en": {
                 "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
@@ -122,7 +128,13 @@ class I18NManager:
                 "stamp_editor_font_tooltip": "Font",
                 "stamp_editor_size_tooltip": "Font Size",
                 "stamp_editor_color_tooltip": "Text Color",
-                "save_pdf_dialog_title": "Save Signed PDF"
+                "save_pdf_dialog_title": "Save Signed PDF",
+                "search_tooltip": "Search in the document",
+                "search_results": "Search Results",
+                "prev_result_tooltip": "Previous result",
+                "next_result_tooltip": "Next result",
+                "print_document": "Print Document...",
+                "show_signatures_menu_item": "Show Signatures"
             }
         }
 

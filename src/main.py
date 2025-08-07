@@ -137,7 +137,18 @@ class GnomeSign(Adw.Application):
         self.config.load()
         self.i18n.set_language(self.config.get_language())
         self.cert_manager.set_cert_paths(self.config.get_cert_paths())
+        quit_action = Gio.SimpleAction.new("quit", None)
+        quit_action.connect("activate", lambda action, param: self.quit())
+        self.add_action(quit_action)
         self._build_actions()
+
+        self.set_accels_for_action("app.open", ["<Primary>o"])
+        self.set_accels_for_action("app.sign", ["<Primary>s"])
+        self.set_accels_for_action("app.print", ["<Primary>p"])
+        self.set_accels_for_action("app.preferences", ["<Primary>comma"])
+        self.set_accels_for_action("app.quit", ["<Primary>q"])
+        self.set_accels_for_action("app.toggle_search", ["<Primary>f"])
+
         self.active_cert_path = self.config.get_active_cert_path()
         from ui.app_window import AppWindow
         self.window = AppWindow(application=self)
@@ -173,24 +184,46 @@ class GnomeSign(Adw.Application):
             else: action.connect("activate", callback)
             self.add_action(action)
 
-        sign_action = Gio.SimpleAction.new("sign", None)
-        sign_action.connect("activate", self.on_sign_document_clicked)
-        sign_action.set_enabled(False) 
-        self.add_action(sign_action)
+        toggle_search_action = Gio.SimpleAction.new_stateful("toggle_search", None, GLib.Variant('b', False))
+        toggle_search_action.connect("activate", self.on_toggle_search_activate)
+        toggle_search_action.connect("change-state", self.on_toggle_search_state_change)
+        toggle_search_action.set_enabled(False)
+        self.add_action(toggle_search_action)
 
-        print_action = Gio.SimpleAction.new("print", None)
-        print_action.connect("activate", self.on_print_clicked)
-        print_action.set_enabled(False)
-        self.add_action(print_action)
+        action_open = Gio.SimpleAction.new("open", None)
+        action_open.connect("activate", self.on_open_pdf_clicked)
+        self.add_action(action_open)
+
+        action_sign = Gio.SimpleAction.new("sign", None)
+        action_sign.connect("activate", self.on_sign_document_clicked)
+        action_sign.set_enabled(False) 
+        self.add_action(action_sign)
+
+        action_print = Gio.SimpleAction.new("print", None)
+        action_print.connect("activate", self.on_print_clicked)
+        action_print.set_enabled(False)
+        self.add_action(action_print)
+
+        action_show_sigs = Gio.SimpleAction.new("show_signatures", None)
+        action_show_sigs.connect("activate", self.on_show_signatures_clicked)
+        action_show_sigs.set_enabled(False) 
+        self.add_action(action_show_sigs)
         
-        simple_actions = [
-            ("open", self.on_open_pdf_clicked), 
-            ("preferences", self.on_preferences_clicked), ("manage_certs", self.on_preferences_clicked), 
-            ("about", self.on_about_clicked), ("edit_stamps", self.on_edit_stamps_clicked),
-            ("show_signatures", self.on_show_signatures_clicked)
-        ]
-        for name, callback in simple_actions:
-            action = Gio.SimpleAction.new(name, None); action.connect("activate", callback); self.add_action(action)
+        action_prefs = Gio.SimpleAction.new("preferences", None)
+        action_prefs.connect("activate", self.on_preferences_clicked)
+        self.add_action(action_prefs)
+
+        action_manage_certs = Gio.SimpleAction.new("manage_certs", None)
+        action_manage_certs.connect("activate", self.on_preferences_clicked)
+        self.add_action(action_manage_certs)
+
+        action_edit_stamps = Gio.SimpleAction.new("edit_stamps", None)
+        action_edit_stamps.connect("activate", self.on_edit_stamps_clicked)
+        self.add_action(action_edit_stamps)
+        
+        action_about = Gio.SimpleAction.new("about", None)
+        action_about.connect("activate", self.on_about_clicked)
+        self.add_action(action_about)  
 
     def open_file_path(self, file_path, show_toast=True):
         """Opens a PDF document, analyzes it for signatures, and updates the application state."""
@@ -226,6 +259,7 @@ class GnomeSign(Adw.Application):
             elif self.active_cert_path and show_toast: self.emit("toast-request", self._("toast_select_area"), None, None)
 
             self.reset_signature_state(); self.display_page(0)
+            self._update_actions_state()
             
         except Exception as e:
             show_error_dialog(self.window, self._("error"), self._("open_pdf_error").format(e))
@@ -361,6 +395,15 @@ class GnomeSign(Adw.Application):
             action.set_state(value); self.i18n.set_language(new_lang)
             self.config.set_language(new_lang); self.emit('language-changed')
 
+    def on_toggle_search_activate(self, action, param):
+        """Handles activation of search action (e.g., via Ctrl+F)."""
+        current_state = action.get_state().get_boolean()
+        action.change_state(GLib.Variant('b', not current_state))
+    
+    def on_toggle_search_state_change(self, action, value):
+        """Callback that updates the state of the 'toggle_search' action."""
+        action.set_state(value)
+    
     def on_sign_document_clicked(self, action=None, param=None):
         """Handles the main 'Sign Document' action."""
         if not self.active_cert_path:
@@ -545,35 +588,27 @@ class GnomeSign(Adw.Application):
 
     def search_text(self, text):
         """Performs a text search in the document and updates the UI."""
-        if not self.doc: return
+        if not self.doc or not text:
+            return
         self.clear_search()
-
         for page_num, page in enumerate(self.doc):
-            # The `search_for` method with `text` will return rectangles.
-            # To get context, we need to extract words.
-            words = page.get_text("words")
-            search_len = len(text)
-
-            # This is a simplified context extraction.
-            # A more robust solution might involve joining words and then searching.
-            for i, word in enumerate(words):
-                word_text = word[4]
-                if text.lower() in word_text.lower():
-                    # Simple context: get a few words before and after.
-                    start_index = max(0, i - 5)
-                    end_index = min(len(words), i + 6)
-                    context_words = [w[4] for w in words[start_index:end_index]]
-                    context = " ".join(context_words)
-
-                    # Create a rect for the found word
-                    rect = fitz.Rect(word[:4])
-                    self.search_results.append(SearchResult(page_num, rect, context))
-
+            found_rects = page.search_for(text) 
+            for rect in found_rects:
+                context_rect = fitz.Rect(
+                    rect.x0 - 50,  
+                    rect.y0 - 5,   
+                    rect.x1 + 50,  
+                    rect.y1 + 5    
+                )  
+                context = page.get_textbox(context_rect).replace('\n', ' ').strip()                
+                self.search_results.append(SearchResult(page_num, rect, context))
         self.window.sidebar.populate_search_results(self.search_results)
         if self.search_results:
             self.select_search_result(0)
-
-        # Update highlights for the current page
+        self.display_page(self.current_page, keep_sidebar_view=True)
+        self.window.sidebar.populate_search_results(self.search_results)
+        if self.search_results:
+            self.select_search_result(0)
         self.display_page(self.current_page, keep_sidebar_view=True)
 
     def clear_search(self):
@@ -591,20 +626,32 @@ class GnomeSign(Adw.Application):
         """Selects a search result by its index."""
         if not (0 <= index < len(self.search_results)):
             return
-
         self.current_search_result_index = index
         result = self.search_results[index]
-
         self.display_page(result.page_num, keep_sidebar_view=True)
-        self.highlight_rect = result.rect
+        if self.page:
+            page_height = self.page.rect.height
+            search_rect = result.rect  
+            converted_rect = (
+                search_rect.x0,
+                page_height - search_rect.y1,
+                search_rect.x1,
+                page_height - search_rect.y0
+            )
+            self.highlight_rect = converted_rect
+        else:
+            self.highlight_rect = None
         self.emit("search-result-selected", result)
         if self.window:
             self.window.update_search_nav_buttons()
 
     def next_search_result(self, button=None):
-        """Navigates to the next search result."""
-        if self.current_search_result_index < len(self.search_results) - 1:
-            self.select_search_result(self.current_search_result_index + 1)
+        """Navigates to the next search result, wrapping around to the start."""
+        num_results = len(self.search_results)
+        if num_results == 0:
+            return
+        next_index = (self.current_search_result_index + 1) % num_results
+        self.select_search_result(next_index)
 
     def previous_search_result(self, button=None):
         """Navigates to the previous search result."""
@@ -615,6 +662,12 @@ class GnomeSign(Adw.Application):
         """Centralized method to update the enabled state of actions."""
         doc_loaded = self.doc is not None
 
+        toggle_search_action = self.lookup_action("toggle_search")
+        if toggle_search_action:
+            toggle_search_action.set_enabled(doc_loaded)
+            if not doc_loaded and toggle_search_action.get_state().get_boolean():
+                toggle_search_action.set_state(GLib.Variant('b', False))
+
         can_sign = doc_loaded and self.signature_rect is not None and self.active_cert_path is not None
         sign_action = self.lookup_action("sign")
         if sign_action:
@@ -623,6 +676,11 @@ class GnomeSign(Adw.Application):
         print_action = self.lookup_action("print")
         if print_action:
             print_action.set_enabled(doc_loaded)
+
+        doc_has_signatures = doc_loaded and len(self.signatures) > 0
+        show_sigs_action = self.lookup_action("show_signatures")
+        if show_sigs_action:
+            show_sigs_action.set_enabled(doc_has_signatures)    
     
     def reset_signature_state(self):
         """Resets all properties related to the current signature drawing/selection."""
@@ -641,9 +699,9 @@ class GnomeSign(Adw.Application):
 
         self.search_highlights_on_page = []
         if self.search_results:
-            for p_num, rect in self.search_results:
-                if p_num == page_num:
-                    self.search_highlights_on_page.append(rect)
+            for result in self.search_results:
+                if result.page_num == page_num:
+                    self.search_highlights_on_page.append(result.rect)
         self.emit("search-highlights-updated", self.search_highlights_on_page)
 
         if not self.doc or not (0 <= page_num < len(self.doc)):

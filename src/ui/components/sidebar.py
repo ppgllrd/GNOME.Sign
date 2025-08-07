@@ -226,6 +226,12 @@ class Sidebar(Gtk.Box):
         """Emits the 'signature-selected' signal when a signature row is activated."""
         self.emit("signature-selected", sig_obj)
 
+    def focus_on_search(self):
+        """Switches the view to the search results list and activates its button."""
+        if self.search_button.is_visible():
+            self.stack.set_visible_child_name("search")
+            self.search_button.set_active(True)
+    
     def focus_on_signatures(self):
         """Scrolls the view to make the list of signatures visible and gives it focus."""
         if self.signatures_button.is_visible():
@@ -238,23 +244,15 @@ class Sidebar(Gtk.Box):
 
     def select_signature(self, sig_to_select):
         """Programmatically selects a signature in the list and ensures it's visible."""
-        # 1. Asegurarse de que la vista de firmas está activa
         self.stack.set_visible_child_name("signatures")
         self.signatures_button.set_active(True)
-
-        # --- INICIO CORRECCIÓN: Iteración correcta sobre Gtk.ListBox ---
         target_row = None
-        # Obtenemos el primer hijo y vamos iterando hasta que no haya más.
         current_row = self.signatures_listbox.get_row_at_index(0)
         while current_row:
             if hasattr(current_row, 'sig_object') and current_row.sig_object is sig_to_select:
                 target_row = current_row
                 break
-            # Avanzamos al siguiente "hermano" en la lista
             current_row = current_row.get_next_sibling()
-        # --- FIN CORRECCIÓN ---
-        
-        # 3. Seleccionar la fila y hacer scroll hacia ella
         if target_row:
             target_row.grab_focus()
             # Note: We can't use select_row here as it's a NONE selection ListBox
