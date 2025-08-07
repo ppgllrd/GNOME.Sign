@@ -10,7 +10,7 @@ import os
 def create_about_dialog(parent, i18n_func):
     """Creates and shows the About dialog."""
     dialog = Gtk.AboutDialog(transient_for=parent, modal=True)
-    dialog.set_program_name("GnomeSign")
+    dialog.set_program_name(i18n_func("window_title"))
     dialog.set_version("1.0")
     dialog.set_comments(i18n_func("sign_reason"))
     dialog.set_logo_icon_name("io.github.ppgllrd.GNOME-Sign")

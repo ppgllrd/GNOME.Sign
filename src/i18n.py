@@ -5,9 +5,9 @@ class I18NManager:
         self.language = initial_language
         self.translations = {
             "es": {
-                "window_title": "GnomeSign", "open_pdf": "Abrir PDF...", "prev_page": "Página anterior", "next_page": "Página siguiente", 
+                "window_title": "GNOME-Sign", "open_pdf": "Abrir PDF...", "prev_page": "Página anterior", "next_page": "Página siguiente", 
                 "sign_document": "Firmar Documento", "load_certificate": "Cargar Certificado...", "select_certificate": "Gestionar Certificados", 
-                "sign_reason": "Firmado con GNOMESign", "error": "Error", "success": "Éxito", "password": "Contraseña", 
+                "sign_reason": "Firmado con GNOME-Sign", "error": "Error", "success": "Éxito", "password": "Contraseña", 
                 "sig_error_title": "Error de Firma", "sig_error_message": "Error: {}", "need_pdf_and_area": "Necesitas abrir un PDF y seleccionar un área de firma.", 
                 "sign_success_message": "Guardado como: {}",
                 "no_cert_selected_error": "Seleccione un certificado en Preferencias antes de firmar.",
@@ -71,9 +71,9 @@ class I18NManager:
                 "show_signatures_menu_item": "Mostrar Firmas"
             },
             "en": {
-                "window_title": "GnomeSign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
+                "window_title": "GNOME-Sign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
                 "sign_document": "Sign Document", "load_certificate": "Load Certificate...", "select_certificate": "Manage Certificates",
-                "sign_reason": "Signed with GNOMESign", "error": "Error", "success": "Success", "password": "Password", 
+                "sign_reason": "Signed with GNOME-Sign", "error": "Error", "success": "Success", "password": "Password", 
                 "sig_error_title": "Signature Error", "sig_error_message": "Error: {}", "need_pdf_and_area": "You need to open a PDF and select a signature area.",                 
                 "sign_success_message": "Saved as: {}",
                 "no_cert_selected_error": "Please select a certificate in Preferences before signing.",                

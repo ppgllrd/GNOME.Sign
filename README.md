@@ -1,6 +1,6 @@
-# GnomeSign
+# GNOME-Sign
 
-GnomeSign is a simple and easy-to-use application for signing PDF documents with a digital certificate. It is built using Python and GTK4/Adw, and it is designed to integrate well with the GNOME desktop environment.
+GNOME-Sign is a simple and easy-to-use application for signing PDF documents with a digital certificate. It is built using Python and GTK4/Adw, and it is designed to integrate well with the GNOME desktop environment.
 
 ## Features
 

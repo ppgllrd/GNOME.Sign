@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>io.github.ppgllrd.GNOME-Sign</id>
-  <name>GnomeSign</name>
+  <name>GNOME-Sign</name>
   <summary>Sign PDF documents with digital certificates</summary>
   <summary xml:lang="es">Firma documentos PDF con certificados digitales</summary>
   <metadata_license>CC0-1.0</metadata_license>
