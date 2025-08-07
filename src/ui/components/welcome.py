@@ -17,7 +17,7 @@ class WelcomeView(Gtk.Box):
         
         # An Adw.StatusPage is used for the main presentation.
         self.status_page = Adw.StatusPage.new()
-        self.status_page.set_icon_name("org.pepeg.GnomeSign")
+        self.status_page.set_icon_name("io.github.ppgllrd.GNOME-Sign")
         self.status_page.add_css_class("compact")
         
         self.append(self.status_page)

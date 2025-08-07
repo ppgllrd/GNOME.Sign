@@ -38,6 +38,13 @@ class Sidebar(Gtk.Box):
         self.signatures_listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.signatures_scrolled_window.set_child(self.signatures_listbox)
         self.stack.add_named(self.signatures_scrolled_window, "signatures")
+
+        # --- Search View ---
+        self.search_scrolled_window = Gtk.ScrolledWindow(hscrollbar_policy="never", vscrollbar_policy="automatic", vexpand=True)
+        self.search_listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
+        self.search_listbox.connect("row-selected", self._on_search_row_selected)
+        self.search_scrolled_window.set_child(self.search_listbox)
+        self.stack.add_named(self.search_scrolled_window, "search")
         
         # --- View Switcher Buttons ---
         switcher_box = Gtk.Box()
@@ -48,6 +55,12 @@ class Sidebar(Gtk.Box):
         self.pages_button = Gtk.ToggleButton(icon_name="view-paged-symbolic")
         self.pages_button.connect("toggled", self._on_view_switched, "pages")
         switcher_box.append(self.pages_button)
+
+        self.search_button = Gtk.ToggleButton(icon_name="system-search-symbolic")
+        self.search_button.set_group(self.pages_button)
+        self.search_button.connect("toggled", self._on_view_switched, "search")
+        switcher_box.append(self.search_button)
+        self.search_button.set_visible(False) # Initially hidden
 
         self.signatures_button = Gtk.ToggleButton(icon_name="security-high-symbolic")
         self.signatures_button.set_group(self.pages_button)
@@ -62,6 +75,7 @@ class Sidebar(Gtk.Box):
         app = self.get_ancestor(Adw.ApplicationWindow).get_application()
         self.pages_button.set_tooltip_text(app._("page_thumbnails"))
         self.signatures_button.set_tooltip_text(app._("show_signatures_tooltip"))
+        self.search_button.set_tooltip_text(app._("search_results"))
     
     def _on_view_switched(self, button, view_name):
         """Callback to switch the visible child of the Gtk.Stack."""
@@ -72,10 +86,10 @@ class Sidebar(Gtk.Box):
         """Fills the sidebar panes with page thumbnails and signature information."""
         # Clear previous content
         self.pages_listbox.unselect_all()
-        while (row := self.pages_listbox.get_row_at_index(0)):
-            self.pages_listbox.remove(row)
-        while (row := self.signatures_listbox.get_row_at_index(0)):
-            self.signatures_listbox.remove(row)
+        while (row := self.pages_listbox.get_row_at_index(0)): self.pages_listbox.remove(row)
+        while (row := self.signatures_listbox.get_row_at_index(0)): self.signatures_listbox.remove(row)
+        while (row := self.search_listbox.get_row_at_index(0)): self.search_listbox.remove(row)
+        self.search_button.set_visible(False)
 
         if not doc: 
             self.set_visible(False)
@@ -141,24 +155,83 @@ class Sidebar(Gtk.Box):
         row = self.pages_listbox.get_row_at_index(page_num)
         if row:
             self.pages_listbox.select_row(row)
-            def scroll_to_row():
-                adj = self.pages_scrolled_window.get_vadjustment()
-                if adj and row.get_allocated_height() > 0:
-                    row_y = row.get_allocation().y
-                    adj.set_value(row_y - adj.get_page_size() / 2 + row.get_allocated_height() / 2)
-                return GLib.SOURCE_REMOVE
-            GLib.idle_add(scroll_to_row)
+            GLib.idle_add(self._scroll_to_selected_row, self.pages_listbox)
         self.block_signal = False
+
+    def _scroll_to_selected_row(self, listbox):
+        """Helper function to scroll the parent ScrolledWindow to the selected row."""
+        row = listbox.get_selected_row()
+        if not row: return GLib.SOURCE_REMOVE
+
+        scrolled_window = listbox.get_ancestor(Gtk.ScrolledWindow)
+        if not scrolled_window: return GLib.SOURCE_REMOVE
+
+        adj = scrolled_window.get_vadjustment()
+        if adj and row.get_allocated_height() > 0:
+            row_y = row.get_allocation().y
+            # Calculation to center the row in the viewport
+            target_y = row_y - (adj.get_page_size() / 2) + (row.get_allocated_height() / 2)
+            # Clamp the value to be within valid adjustment bounds
+            clamped_y = max(adj.get_lower(), min(target_y, adj.get_upper() - adj.get_page_size()))
+            adj.set_value(clamped_y)
+
+        return GLib.SOURCE_REMOVE
 
     def _on_page_row_selected(self, listbox, row):
         """Emits the 'page-selected' signal when a user clicks a page thumbnail."""
         if row and not self.block_signal: 
             self.emit("page-selected", row.get_index())
 
+    def _on_search_row_selected(self, listbox, row):
+        """Calls the application to select the corresponding search result."""
+        if row and not self.block_signal:
+            app = self.get_ancestor(Adw.ApplicationWindow).get_application()
+            app.select_search_result(row.get_index())
+
+    def populate_search_results(self, results):
+        """Fills the search results list with individual results and context."""
+        app = self.get_ancestor(Adw.ApplicationWindow).get_application()
+        self.block_signal = True
+        while (row := self.search_listbox.get_row_at_index(0)): self.search_listbox.remove(row)
+
+        if not results:
+            self.search_button.set_visible(False)
+            if self.search_button.get_active():
+                self.pages_button.set_active(True)
+            self.block_signal = False
+            return
+
+        for i, result in enumerate(results):
+            row = Adw.ActionRow.new()
+            row.set_title(f"Page {result.page_num + 1}")
+            row.set_subtitle(result.context)
+            row.set_activatable(True)
+            self.search_listbox.append(row)
+
+        self.search_button.set_visible(True)
+        self.search_button.set_active(True)
+        self.stack.set_visible_child_name("search")
+        self.block_signal = False
+
+    def select_search_result(self, index):
+        """Programmatically selects a search result in the list."""
+        self.block_signal = True
+        row = self.search_listbox.get_row_at_index(index)
+        if row:
+            self.search_listbox.select_row(row)
+            GLib.idle_add(self._scroll_to_selected_row, self.search_listbox)
+        self.block_signal = False
+
     def _on_signature_row_activated(self, row, sig_obj):
         """Emits the 'signature-selected' signal when a signature row is activated."""
         self.emit("signature-selected", sig_obj)
 
+    def focus_on_search(self):
+        """Switches the view to the search results list and activates its button."""
+        if self.search_button.is_visible():
+            self.stack.set_visible_child_name("search")
+            self.search_button.set_active(True)
+    
     def focus_on_signatures(self):
         """Scrolls the view to make the list of signatures visible and gives it focus."""
         if self.signatures_button.is_visible():
@@ -171,30 +244,16 @@ class Sidebar(Gtk.Box):
 
     def select_signature(self, sig_to_select):
         """Programmatically selects a signature in the list and ensures it's visible."""
-        # 1. Asegurarse de que la vista de firmas está activa
         self.stack.set_visible_child_name("signatures")
         self.signatures_button.set_active(True)
-
-        # --- INICIO CORRECCIÓN: Iteración correcta sobre Gtk.ListBox ---
         target_row = None
-        # Obtenemos el primer hijo y vamos iterando hasta que no haya más.
         current_row = self.signatures_listbox.get_row_at_index(0)
         while current_row:
             if hasattr(current_row, 'sig_object') and current_row.sig_object is sig_to_select:
                 target_row = current_row
                 break
-            # Avanzamos al siguiente "hermano" en la lista
             current_row = current_row.get_next_sibling()
-        # --- FIN CORRECCIÓN ---
-        
-        # 3. Seleccionar la fila y hacer scroll hacia ella
         if target_row:
             target_row.grab_focus()
-
-            def scroll_to_row():
-                adj = self.signatures_scrolled_window.get_vadjustment()
-                if adj and target_row.get_allocated_height() > 0:
-                    row_y = target_row.get_allocation().y
-                    adj.set_value(row_y - adj.get_page_size() / 2 + target_row.get_allocated_height() / 2)
-                return GLib.SOURCE_REMOVE
-            GLib.idle_add(scroll_to_row)
+            # Note: We can't use select_row here as it's a NONE selection ListBox
+            GLib.idle_add(self._scroll_to_selected_row, self.signatures_listbox)

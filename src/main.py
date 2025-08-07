@@ -8,6 +8,7 @@ from gi.repository import Gtk, Adw, Gio, Secret, GLib, GObject
 import fitz, sys, os, re
 from datetime import datetime, timezone, timedelta
 from cryptography import x509
+from io import BytesIO
 from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign import signers, fields
@@ -28,6 +29,17 @@ from ui.stamp_editor_dialog import StampEditorDialog
 from ui.dialogs import create_password_dialog, create_about_dialog, show_error_dialog
 from stamp_creator import HtmlStamp, pango_to_html
 from pyhanko.stamp import StaticStampStyle
+
+def is_running_in_flatpak():
+    """Checks if the application is running inside a Flatpak sandbox."""
+    return os.getenv('FLATPAK_ID') is not None
+
+class SearchResult:
+    """A data class to hold information about a single text search result."""
+    def __init__(self, page_num, rect, context):
+        self.page_num = page_num
+        self.rect = rect
+        self.context = context
 
 class SignatureDetails:
     """A data class to hold processed information about a digital signature."""
@@ -78,7 +90,6 @@ class SignatureDetails:
                     self.sign_time = attr['values'][0].native
                     break
         except (KeyError, AttributeError, IndexError, TypeError):
-            # This is not a critical error, just a missing attribute.
             pass
         if not self.sign_time and validation_status.timestamp_validity:
             self.sign_time = validation_status.timestamp_validity.timestamp
@@ -94,11 +105,13 @@ class GnomeSign(Adw.Application):
         'signatures-found': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
         'toast-request': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_PYOBJECT)),
         'highlight-rect-changed': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
+        'search-highlights-updated': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
+        'search-result-selected': (GObject.SignalFlags.RUN_FIRST, None, (GObject.TYPE_PYOBJECT,)),
     }
 
     def __init__(self):
         """Initializes the application."""
-        super().__init__(application_id="org.pepeg.GnomeSign", flags=Gio.ApplicationFlags.HANDLES_OPEN)
+        super().__init__(application_id="io.github.ppgllrd.GNOME-Sign", flags=Gio.ApplicationFlags.HANDLES_OPEN)
         self.config = ConfigManager()
         self.i18n = I18NManager()
         self.cert_manager = CertificateManager()
@@ -110,6 +123,9 @@ class GnomeSign(Adw.Application):
         self.highlight_rect = None
         self.window, self.preferences_window = None, None
         self.signatures = []
+        self.search_results = []
+        self.search_highlights_on_page = []
+        self.current_search_result_index = -1
     
     def _(self, key):
         """A shorthand for the translation function."""
@@ -121,7 +137,18 @@ class GnomeSign(Adw.Application):
         self.config.load()
         self.i18n.set_language(self.config.get_language())
         self.cert_manager.set_cert_paths(self.config.get_cert_paths())
+        quit_action = Gio.SimpleAction.new("quit", None)
+        quit_action.connect("activate", lambda action, param: self.quit())
+        self.add_action(quit_action)
         self._build_actions()
+
+        self.set_accels_for_action("app.open", ["<Primary>o"])
+        self.set_accels_for_action("app.sign", ["<Primary>s"])
+        self.set_accels_for_action("app.print", ["<Primary>p"])
+        self.set_accels_for_action("app.preferences", ["<Primary>comma"])
+        self.set_accels_for_action("app.quit", ["<Primary>q"])
+        self.set_accels_for_action("app.toggle_search", ["<Primary>f"])
+
         self.active_cert_path = self.config.get_active_cert_path()
         from ui.app_window import AppWindow
         self.window = AppWindow(application=self)
@@ -157,19 +184,46 @@ class GnomeSign(Adw.Application):
             else: action.connect("activate", callback)
             self.add_action(action)
 
-        sign_action = Gio.SimpleAction.new("sign", None)
-        sign_action.connect("activate", self.on_sign_document_clicked)
-        sign_action.set_enabled(False) 
-        self.add_action(sign_action)
+        toggle_search_action = Gio.SimpleAction.new_stateful("toggle_search", None, GLib.Variant('b', False))
+        toggle_search_action.connect("activate", self.on_toggle_search_activate)
+        toggle_search_action.connect("change-state", self.on_toggle_search_state_change)
+        toggle_search_action.set_enabled(False)
+        self.add_action(toggle_search_action)
+
+        action_open = Gio.SimpleAction.new("open", None)
+        action_open.connect("activate", self.on_open_pdf_clicked)
+        self.add_action(action_open)
+
+        action_sign = Gio.SimpleAction.new("sign", None)
+        action_sign.connect("activate", self.on_sign_document_clicked)
+        action_sign.set_enabled(False) 
+        self.add_action(action_sign)
+
+        action_print = Gio.SimpleAction.new("print", None)
+        action_print.connect("activate", self.on_print_clicked)
+        action_print.set_enabled(False)
+        self.add_action(action_print)
+
+        action_show_sigs = Gio.SimpleAction.new("show_signatures", None)
+        action_show_sigs.connect("activate", self.on_show_signatures_clicked)
+        action_show_sigs.set_enabled(False) 
+        self.add_action(action_show_sigs)
         
-        simple_actions = [
-            ("open", self.on_open_pdf_clicked), 
-            ("preferences", self.on_preferences_clicked), ("manage_certs", self.on_preferences_clicked), 
-            ("about", self.on_about_clicked), ("edit_stamps", self.on_edit_stamps_clicked),
-            ("show_signatures", self.on_show_signatures_clicked)
-        ]
-        for name, callback in simple_actions:
-            action = Gio.SimpleAction.new(name, None); action.connect("activate", callback); self.add_action(action)
+        action_prefs = Gio.SimpleAction.new("preferences", None)
+        action_prefs.connect("activate", self.on_preferences_clicked)
+        self.add_action(action_prefs)
+
+        action_manage_certs = Gio.SimpleAction.new("manage_certs", None)
+        action_manage_certs.connect("activate", self.on_preferences_clicked)
+        self.add_action(action_manage_certs)
+
+        action_edit_stamps = Gio.SimpleAction.new("edit_stamps", None)
+        action_edit_stamps.connect("activate", self.on_edit_stamps_clicked)
+        self.add_action(action_edit_stamps)
+        
+        action_about = Gio.SimpleAction.new("about", None)
+        action_about.connect("activate", self.on_about_clicked)
+        self.add_action(action_about)  
 
     def open_file_path(self, file_path, show_toast=True):
         """Opens a PDF document, analyzes it for signatures, and updates the application state."""
@@ -177,6 +231,7 @@ class GnomeSign(Adw.Application):
             if not os.path.exists(file_path): raise FileNotFoundError(f"File not found: {file_path}")
             if self.doc: self.doc.close()
             
+            self.clear_search()
             self.signatures = []
             try:
                 with open(file_path, 'rb') as f:
@@ -194,7 +249,6 @@ class GnomeSign(Adw.Application):
                             status = validate_pdf_signature(sig, validation_context, skip_diff=True)
                             self.signatures.append(SignatureDetails(sig, status, -1, None))
             except Exception as e:
-                # This is not a critical failure; the PDF might just not be analyzable.
                 print(f"Could not analyze for signatures: {e}")
 
             self.current_file_path = file_path; self.doc = fitz.open(file_path); self.current_page = 0
@@ -205,6 +259,7 @@ class GnomeSign(Adw.Application):
             elif self.active_cert_path and show_toast: self.emit("toast-request", self._("toast_select_area"), None, None)
 
             self.reset_signature_state(); self.display_page(0)
+            self._update_actions_state()
             
         except Exception as e:
             show_error_dialog(self.window, self._("error"), self._("open_pdf_error").format(e))
@@ -340,6 +395,15 @@ class GnomeSign(Adw.Application):
             action.set_state(value); self.i18n.set_language(new_lang)
             self.config.set_language(new_lang); self.emit('language-changed')
 
+    def on_toggle_search_activate(self, action, param):
+        """Handles activation of search action (e.g., via Ctrl+F)."""
+        current_state = action.get_state().get_boolean()
+        action.change_state(GLib.Variant('b', not current_state))
+    
+    def on_toggle_search_state_change(self, action, value):
+        """Callback that updates the state of the 'toggle_search' action."""
+        action.set_state(value)
+    
     def on_sign_document_clicked(self, action=None, param=None):
         """Handles the main 'Sign Document' action."""
         if not self.active_cert_path:
@@ -356,24 +420,103 @@ class GnomeSign(Adw.Application):
             show_error_dialog(self.window, self._("error"), self._("credential_load_error"))
             return
 
+        self._perform_signing(private_key_pyca, certificate_pyca)
+
+    def on_print_clicked(self, action, param):
+        """Handles the 'Print' action."""
+        if not self.doc: return
+
+        print_op = Gtk.PrintOperation()
+        print_op.set_job_name(os.path.basename(self.current_file_path) if self.current_file_path else "Document")
+        print_op.set_n_pages(len(self.doc))
+        print_op.connect("draw_page", self._on_print_draw_page)
+
+        res = print_op.run(Gtk.PrintOperationAction.PRINT_DIALOG, self.window)
+
+        if res == Gtk.PrintOperationResult.ERROR:
+            show_error_dialog(self.window, self._("print_error_title"), self._("print_error_message").format(print_op.get_status_string()))
+        elif res == Gtk.PrintOperationResult.APPLY:
+            self.emit("toast-request", self._("print_success_toast"), None, None)
+
+    def _on_print_draw_page(self, operation, context, page_nr):
+        """Draws a single page for the print operation."""
         try:
-            # The signing process itself
-            output_path = self._perform_signing(private_key_pyca, certificate_pyca)
-            
-            # Show success toast
-            self.emit("toast-request", self._("sign_success_message").format(os.path.basename(output_path)), self._("open"), lambda: self.open_file_path(output_path, show_toast=False))
+            page = self.doc.load_page(page_nr)
+            cr = context.get_cairo_context()
+
+            # Get page dimensions from PDF and print context dimensions
+            pdf_width, pdf_height = page.rect.width, page.rect.height
+            page_setup = context.get_page_setup()
+            printable_width = page_setup.get_printable_width(Gtk.Unit.POINTS)
+            printable_height = page_setup.get_printable_height(Gtk.Unit.POINTS)
+
+            # Scale to fit printable area while maintaining aspect ratio
+            scale_w = printable_width / pdf_width
+            scale_h = printable_height / pdf_height
+            scale = min(scale_w, scale_h)
+
+            # Center the page
+            cr.save()
+            cr.translate(
+                (printable_width - pdf_width * scale) / 2,
+                (printable_height - pdf_height * scale) / 2
+            )
+            cr.scale(scale, scale)
+
+            # Render the page using Fitz's drawing device
+            dl = page.get_displaylist()
+            dl.run(fitz.TOOLS.new_device("cairo", cr), fitz.Matrix(1, 1))
+
+            cr.restore()
+
         except Exception as e:
-            show_error_dialog(self.window, self._("sig_error_title"), self._("sig_error_message").format(e))
-            import traceback; traceback.print_exc()
+            # It's hard to report errors from here, but we can log them.
+            print(f"Error drawing page {page_nr} for printing: {e}")
+
+    def _generate_output_path(self, input_path):
+        """
+        Generates a unique output filename based on the input path.
+        Appends '-signed.pdf', and adds a version number if a file with that name exists.
+        
+        NOTE: In Flatpak, os.path.exists() is limited by sandbox permissions.
+        This provides a best-effort suggestion; the portal itself will prevent overwrites.
+        """
+        base_path, ext = os.path.splitext(input_path)
+        output_path = f"{base_path}-signed{ext}"
+        version = 1
+        while os.path.exists(output_path):
+            output_path = f"{base_path}-signed-{version}{ext}"
+            version += 1
+        return output_path
 
     def _perform_signing(self, private_key_pyca, certificate_pyca):
-        """Encapsulates the pyHanko signing logic."""
+        """Orchestrates the signing and saving process, adapting for Flatpak."""
+        try:
+            signed_bytes = self._get_signed_pdf_bytes_in_memory(private_key_pyca, certificate_pyca)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            show_error_dialog(self.window, self._("sig_error_title"), self._("sig_error_message").format(e))
+            return
+
+        if is_running_in_flatpak():
+            self._save_via_portal(signed_bytes)
+        else:
+            try:
+                output_path = self._generate_output_path(self.current_file_path)
+                with open(output_path, "wb") as out_f:
+                    out_f.write(signed_bytes)
+                
+                self.emit("toast-request", self._("sign_success_message").format(os.path.basename(output_path)), self._("open"), lambda: self.open_file_path(output_path, show_toast=False))
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                show_error_dialog(self.window, self._("sig_error_title"), self._("sig_error_message").format(e))
+
+    def _get_signed_pdf_bytes_in_memory(self, private_key_pyca, certificate_pyca):
+        """Encapsulates the pyHanko signing logic, returning the result as bytes."""
         signing_key_asn1 = translate_pyca_cryptography_key_to_asn1(private_key_pyca)
         signer_cert_asn1 = translate_pyca_cryptography_cert_to_asn1(certificate_pyca)
-        
-        output_path = self.current_file_path.replace(".pdf", "-signed.pdf"); version = 1
-        while os.path.exists(output_path):
-            output_path = f"{os.path.splitext(self.current_file_path)[0]}-signed-{version}.pdf"; version += 1
         
         signer = signers.SimpleSigner(signing_cert=signer_cert_asn1, signing_key=signing_key_asn1, cert_registry=SimpleCertificateStore.from_certs([signer_cert_asn1]))
         x, y, w, h = self.signature_rect
@@ -396,22 +539,148 @@ class GnomeSign(Adw.Application):
         
         pdf_signer = PdfSigner(meta, signer, stamp_style=stamp_creator.get_style(), new_field_spec=new_field_spec)
         
-        with open(self.current_file_path, "rb") as orig_f, open(output_path, "wb") as out_f:
+        output_buffer = BytesIO()
+        with open(self.current_file_path, "rb") as orig_f:
             writer = IncrementalPdfFileWriter(orig_f, strict=False)
-            pdf_signer.sign_pdf(writer, output=out_f)
-            
-        return output_path
+            pdf_signer.sign_pdf(writer, output=output_buffer)
+        return output_buffer.getvalue()
+
+    def _save_via_portal(self, content_to_save_bytes):
+        """Handles saving the signed file using the Gtk.FileChooserNative portal."""
+        suggested_path = self._generate_output_path(self.current_file_path)
+        suggested_name = os.path.basename(suggested_path)
+
+        dialog = Gtk.FileChooserNative.new(
+            self._("save_pdf_dialog_title"),
+            self.window,
+            Gtk.FileChooserAction.SAVE
+        )
+        dialog.set_modal(True)
+        dialog.set_current_name(suggested_name)
+
+        original_gfile = Gio.File.new_for_path(self.current_file_path)
+        parent_folder = original_gfile.get_parent()
+        if parent_folder:
+            dialog.set_current_folder(parent_folder)
+
+        dialog.connect("response", self._on_save_dialog_response, content_to_save_bytes)
+        dialog.show()
+
+    def _on_save_dialog_response(self, dialog, response_id, content_bytes):
+        """Callback for when the user interacts with the save dialog."""
+        if response_id == Gtk.ResponseType.ACCEPT:
+            output_gfile = dialog.get_file()
+            if output_gfile:
+                try:
+                    output_gfile.replace_contents(
+                        content_bytes, None, False, 
+                        Gio.FileCreateFlags.REPLACE_DESTINATION, None
+                    )
+                    output_path = output_gfile.get_path()
+                    self.emit("toast-request", self._("sign_success_message").format(os.path.basename(output_path)), self._("open"), lambda: self.open_file_path(output_path, show_toast=False))
+                except GLib.Error as e:
+                    show_error_dialog(self.window, self._("sig_error_title"), self._("sig_error_message").format(e))
+        dialog.destroy()
 
     def on_about_clicked(self, action, param):
         """Shows the 'About' dialog."""
         create_about_dialog(self.window, self._)
-        
-    def _update_sign_action_state(self):
-        """Centralized method to update the enabled state of the sign action."""
-        can_sign = self.doc is not None and self.signature_rect is not None and self.active_cert_path is not None
+
+    def search_text(self, text):
+        """Performs a text search in the document and updates the UI."""
+        if not self.doc or not text:
+            return
+        self.clear_search()
+        for page_num, page in enumerate(self.doc):
+            found_rects = page.search_for(text) 
+            for rect in found_rects:
+                context_rect = fitz.Rect(
+                    rect.x0 - 50,  
+                    rect.y0 - 5,   
+                    rect.x1 + 50,  
+                    rect.y1 + 5    
+                )  
+                context = page.get_textbox(context_rect).replace('\n', ' ').strip()                
+                self.search_results.append(SearchResult(page_num, rect, context))
+        self.window.sidebar.populate_search_results(self.search_results)
+        if self.search_results:
+            self.select_search_result(0)
+        self.display_page(self.current_page, keep_sidebar_view=True)
+        self.window.sidebar.populate_search_results(self.search_results)
+        if self.search_results:
+            self.select_search_result(0)
+        self.display_page(self.current_page, keep_sidebar_view=True)
+
+    def clear_search(self):
+        """Clears the current search."""
+        self.search_results = []
+        self.search_highlights_on_page = []
+        self.current_search_result_index = -1
+        self.emit("search-highlights-updated", [])
+        if self.window:
+            self.window.sidebar.populate_search_results([])
+            self.window.drawing_area.queue_draw()
+            self.window.update_search_nav_buttons()
+
+    def select_search_result(self, index):
+        """Selects a search result by its index."""
+        if not (0 <= index < len(self.search_results)):
+            return
+        self.current_search_result_index = index
+        result = self.search_results[index]
+        self.display_page(result.page_num, keep_sidebar_view=True)
+        if self.page:
+            page_height = self.page.rect.height
+            search_rect = result.rect  
+            converted_rect = (
+                search_rect.x0,
+                page_height - search_rect.y1,
+                search_rect.x1,
+                page_height - search_rect.y0
+            )
+            self.highlight_rect = converted_rect
+        else:
+            self.highlight_rect = None
+        self.emit("search-result-selected", result)
+        if self.window:
+            self.window.update_search_nav_buttons()
+
+    def next_search_result(self, button=None):
+        """Navigates to the next search result, wrapping around to the start."""
+        num_results = len(self.search_results)
+        if num_results == 0:
+            return
+        next_index = (self.current_search_result_index + 1) % num_results
+        self.select_search_result(next_index)
+
+    def previous_search_result(self, button=None):
+        """Navigates to the previous search result."""
+        if self.current_search_result_index > 0:
+            self.select_search_result(self.current_search_result_index - 1)
+
+    def _update_actions_state(self):
+        """Centralized method to update the enabled state of actions."""
+        doc_loaded = self.doc is not None
+
+        toggle_search_action = self.lookup_action("toggle_search")
+        if toggle_search_action:
+            toggle_search_action.set_enabled(doc_loaded)
+            if not doc_loaded and toggle_search_action.get_state().get_boolean():
+                toggle_search_action.set_state(GLib.Variant('b', False))
+
+        can_sign = doc_loaded and self.signature_rect is not None and self.active_cert_path is not None
         sign_action = self.lookup_action("sign")
         if sign_action:
             sign_action.set_enabled(can_sign)
+
+        print_action = self.lookup_action("print")
+        if print_action:
+            print_action.set_enabled(doc_loaded)
+
+        doc_has_signatures = doc_loaded and len(self.signatures) > 0
+        show_sigs_action = self.lookup_action("show_signatures")
+        if show_sigs_action:
+            show_sigs_action.set_enabled(doc_has_signatures)    
     
     def reset_signature_state(self):
         """Resets all properties related to the current signature drawing/selection."""
@@ -420,13 +689,21 @@ class GnomeSign(Adw.Application):
         self.is_dragging_rect = False
         self.highlight_rect = None
         self.emit("signature-state-changed")
-        self._update_sign_action_state()
+        self._update_actions_state()
 
     def display_page(self, page_num, keep_sidebar_view=False):
         """Loads and displays a specific page of the current document."""
         if self.highlight_rect:
             self.highlight_rect = None
             self.emit("highlight-rect-changed", None)
+
+        self.search_highlights_on_page = []
+        if self.search_results:
+            for result in self.search_results:
+                if result.page_num == page_num:
+                    self.search_highlights_on_page.append(result.rect)
+        self.emit("search-highlights-updated", self.search_highlights_on_page)
+
         if not self.doc or not (0 <= page_num < len(self.doc)):
             self.page = None; self.doc = None; self.current_file_path = None; self.display_pixbuf = None; self.signatures = []
             self.emit("document-changed", None)
@@ -449,7 +726,6 @@ class GnomeSign(Adw.Application):
     def on_jump_to_page_clicked(self, button):
         """Shows a dialog to jump to a specific page."""
         if not self.doc: return
-        # This can be refactored into ui/dialogs.py if needed, but is simple enough here.
         dialog = Gtk.Dialog(title=self._("jump_to_page_title"), transient_for=self.window, modal=True)
         dialog.add_buttons(self._("cancel"), Gtk.ResponseType.CANCEL, self._("accept"), Gtk.ResponseType.OK)
         content_area = dialog.get_content_area(); content_area.set_spacing(10); content_area.set_margin_top(10); content_area.set_margin_bottom(10); content_area.set_margin_start(10); content_area.set_margin_end(10)
@@ -493,7 +769,7 @@ class GnomeSign(Adw.Application):
             self.signature_rect = (x1, y1, width, height) if width > 5 and height > 5 else None
         self.is_dragging_rect = False
         self.emit("signature-state-changed")
-        self._update_sign_action_state()
+        self._update_actions_state()
 
     def get_parsed_stamp_text(self, certificate, override_template=None):
         """Parses a signature template, replacing placeholders with actual certificate data."""
@@ -522,7 +798,7 @@ class GnomeSign(Adw.Application):
         self.active_cert_path = path
         self.config.set_active_cert_path(path)
         self.emit("certificates-changed")
-        self._update_sign_action_state()
+        self._update_actions_state()
 
     def add_certificate(self, pkcs12_path, password):
         """Adds a new certificate, saves it, and notifies the UI."""
@@ -533,7 +809,7 @@ class GnomeSign(Adw.Application):
             self.config.set_last_folder(os.path.dirname(pkcs12_path))
             self.cert_manager.add_cert_path(pkcs12_path)
             self.set_active_certificate(pkcs12_path)
-            self.config.save() # Save immediately after a successful addition
+            self.config.save()
             return True
         else:
             show_error_dialog(self.window, self._("error"), self._("bad_password_or_file"))
@@ -552,7 +828,7 @@ class GnomeSign(Adw.Application):
         else:
             self.emit("certificates-changed")
         
-        self.config.save() # Save immediately after a removal
+        self.config.save()
 
     def request_add_new_certificate(self):
         """Manages the full flow of adding a new certificate."""
