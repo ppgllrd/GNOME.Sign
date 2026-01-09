@@ -203,8 +203,9 @@ class AppWindow(Adw.ApplicationWindow):
         num_results = len(app.search_results)
         self.search_nav_box.set_visible(num_results > 0)
         if num_results > 0:
-            self.prev_search_button.set_sensitive(app.current_search_result_index > 0)
-            self.next_search_button.set_sensitive(app.current_search_result_index < num_results - 1)
+            # Both buttons are always enabled when there are results (wrap-around behavior)
+            self.prev_search_button.set_sensitive(num_results > 1)
+            self.next_search_button.set_sensitive(num_results > 1)
 
     def _on_search_changed(self, entry):
         """Handles the 'search-changed' signal from the search entry."""

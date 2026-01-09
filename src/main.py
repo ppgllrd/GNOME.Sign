@@ -606,10 +606,6 @@ class GnomeSign(Adw.Application):
         if self.search_results:
             self.select_search_result(0)
         self.display_page(self.current_page, keep_sidebar_view=True)
-        self.window.sidebar.populate_search_results(self.search_results)
-        if self.search_results:
-            self.select_search_result(0)
-        self.display_page(self.current_page, keep_sidebar_view=True)
 
     def clear_search(self):
         """Clears the current search."""
@@ -654,9 +650,12 @@ class GnomeSign(Adw.Application):
         self.select_search_result(next_index)
 
     def previous_search_result(self, button=None):
-        """Navigates to the previous search result."""
-        if self.current_search_result_index > 0:
-            self.select_search_result(self.current_search_result_index - 1)
+        """Navigates to the previous search result, wrapping around to the end."""
+        num_results = len(self.search_results)
+        if num_results == 0:
+            return
+        prev_index = (self.current_search_result_index - 1) % num_results
+        self.select_search_result(prev_index)
 
     def _update_actions_state(self):
         """Centralized method to update the enabled state of actions."""
@@ -828,6 +827,16 @@ class GnomeSign(Adw.Application):
         else:
             self.emit("certificates-changed")
         
+        self.config.save()
+
+    def remove_template(self, template_id):
+        """Removes a signature template and updates the active template if necessary."""
+        self.config.delete_template(template_id)
+        # If the deleted template was the active one, select a new active template
+        if self.config.get_active_template_id() == template_id:
+            templates = self.config.get_signature_templates()
+            new_active_id = templates[0]['id'] if templates else None
+            self.config.set_active_template_id(new_active_id)
         self.config.save()
 
     def request_add_new_certificate(self):

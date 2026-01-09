@@ -61,4 +61,4 @@ python3 src/main.py
 
 ## License
 
-This project is licensed under the terms of the MIT License. See the [LICENSE](LICENSE) file for more details.
+This project is licensed under the terms of the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later). See the [LICENSE](LICENSE) file for more details.
