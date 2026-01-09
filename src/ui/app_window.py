@@ -203,7 +203,7 @@ class AppWindow(Adw.ApplicationWindow):
         num_results = len(app.search_results)
         self.search_nav_box.set_visible(num_results > 0)
         if num_results > 0:
-            # Both buttons are always enabled when there are results (wrap-around behavior)
+            # Navigation buttons are only useful when there are multiple results to navigate between
             self.prev_search_button.set_sensitive(num_results > 1)
             self.next_search_button.set_sensitive(num_results > 1)
 
