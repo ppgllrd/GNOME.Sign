@@ -831,9 +831,10 @@ class GnomeSign(Adw.Application):
 
     def remove_template(self, template_id):
         """Removes a signature template and updates the active template if necessary."""
+        was_active = self.config.get_active_template_id() == template_id
         self.config.delete_template(template_id)
         # If the deleted template was the active one, select a new active template
-        if self.config.get_active_template_id() == template_id:
+        if was_active:
             templates = self.config.get_signature_templates()
             new_active_id = templates[0]['id'] if templates else None
             self.config.set_active_template_id(new_active_id)
