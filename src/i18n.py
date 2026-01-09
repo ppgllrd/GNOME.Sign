@@ -1,6 +1,6 @@
 class I18NManager:
     """A simple internationalization manager to handle string translations."""
-    def __init__(self, initial_language="es"):
+    def __init__(self, initial_language="en"):
         """Initializes the manager with a given language."""
         self.language = initial_language
         self.translations = {
@@ -28,7 +28,7 @@ class I18NManager:
                 "sign_button_tooltip_select_area": "Arrastre sobre el documento para seleccionar el área de la firma",
                 "sign_button_tooltip_sign": "Firmar el documento", 
                 "preferences": "Preferencias", "general": "General", "language": "Idioma", "certificates": "Certificados", "close_button": "Cerrar",
-                "toggle_sidebar_tooltip": "Mostrar/Ocular panel lateral",
+                "toggle_sidebar_tooltip": "Mostrar/Ocultar panel lateral",
                 "manage_certificates_tooltip": "Gestionar certificados",
                 "toast_select_area": "Arrastre para seleccionar un área y pulse el botón de firma",
                 "signatures_found_toast": "Se encontraron {} firmas en el documento.",
@@ -36,8 +36,6 @@ class I18NManager:
                 "sig_validity_title": "Estado de la Firma",
                 "sig_validity_ok": "La firma es criptográficamente válida.",
                 "sig_validity_error": "La firma no es criptográficamente válida.",
-                "signer": "Firmante",
-                "sign_date": "Fecha de Firma",
                 "signer": "Firmante",
                 "sign_date": "Fecha de Firma",
                 "go_to_signatures": "Ver Firmas",
@@ -68,7 +66,18 @@ class I18NManager:
                 "prev_result_tooltip": "Resultado anterior",
                 "next_result_tooltip": "Siguiente resultado",
                 "print_document": "Imprimir Documento...",
-                "show_signatures_menu_item": "Mostrar Firmas"
+                "show_signatures_menu_item": "Mostrar Firmas",
+                "print_error_title": "Error de Impresión",
+                "print_error_message": "No se pudo imprimir el documento: {}",
+                "print_success_toast": "Documento enviado a la impresora.",
+                "template": "Plantilla",
+                "template_content": "Contenido de la Plantilla",
+                "font": "Fuente",
+                "size": "Tamaño",
+                "size_small": "Pequeño",
+                "size_normal": "Normal",
+                "size_large": "Grande",
+                "size_huge": "Muy Grande"
             },
             "en": {
                 "window_title": "GNOME-Sign", "open_pdf": "Open PDF...", "prev_page": "Previous page", "next_page": "Next page", 
@@ -100,10 +109,8 @@ class I18NManager:
                 "signatures_found_toast": "Found {} signatures in the document.",
                 "sig_details_title": "Signature Details",
                 "sig_validity_title": "Signature Status",
-                "sig_validity_ok": "The signature is criptographically valid.",
-                "sig_validity_error": "The signature is not criptographically valid",
-                "signer": "Signer",
-                "sign_date": "Signature Date",
+                "sig_validity_ok": "The signature is cryptographically valid.",
+                "sig_validity_error": "The signature is not cryptographically valid.",
                 "signer": "Signer",
                 "sign_date": "Signature Date",
                 "go_to_signatures": "View Signatures",
@@ -117,7 +124,7 @@ class I18NManager:
                 "signature_reason_label": "Reason",
                 "signature_location_label": "Location",
                 "signature_contact_label": "Contact",
-                "sig_integrity_ok": "The signature is criptographically valid and the document has not been modified.",
+                "sig_integrity_ok": "The signature is cryptographically valid and the document has not been modified.",
                 "sig_integrity_error": "The signature is invalid or the document has been modified.",
                 "sig_trust_ok": "The signer's certificate is trusted.",
                 "sig_trust_untrusted": "Could not establish trust in the signer's certificate.",
@@ -134,7 +141,18 @@ class I18NManager:
                 "prev_result_tooltip": "Previous result",
                 "next_result_tooltip": "Next result",
                 "print_document": "Print Document...",
-                "show_signatures_menu_item": "Show Signatures"
+                "show_signatures_menu_item": "Show Signatures",
+                "print_error_title": "Print Error",
+                "print_error_message": "Could not print document: {}",
+                "print_success_toast": "Document sent to printer.",
+                "template": "Template",
+                "template_content": "Template Content",
+                "font": "Font",
+                "size": "Size",
+                "size_small": "Small",
+                "size_normal": "Normal",
+                "size_large": "Large",
+                "size_huge": "Huge"
             }
         }
 
